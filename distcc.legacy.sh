@@ -89,15 +89,6 @@
 #
 # EXIT CODES
 #
-#    When not indicated otherwise, this script returns the exit code of the
-#    build invocation.
-#
-#    The build invocation might have various exit codes, depending on whether
-#    it goes through CMake, the build wrangler is GNU make or ninja, what
-#    compiler is used.
-#
-#    In addition, this script generates the following error conditions:
-#
 #    -6                    Returned if not enough memory are present to run
 #                          local compilations.
 #

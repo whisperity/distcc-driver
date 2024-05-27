@@ -47,7 +47,7 @@
 #
 #     DISTCC_AUTO_HOSTS = AUTO_HOST_SPEC ...
 #     AUTO_HOST_SPEC    = TCP_HOST
-#     TCP_HOST          = HOSTNAME[:DISTCC_PORT[:STATS_PORT]]
+#     TCP_HOST          = [tcp://]HOSTNAME[:DISTCC_PORT[:STATS_PORT]]
 #     HOSTNAME          = ALPHANUMERIC_HOSTNAME
 #                       | IPv4_ADDRESS
 #                       | IPv6_ADDRESS
@@ -79,13 +79,26 @@
 #
 # EXIT CODES
 #
+#   When not indicated otherwise, the script will exit with the exit code of
+#   the build invocation command which was passed to 'distcc_build'.
+#   The actual build system might have and define various non-zero exit codes
+#   for error conditions, which should be looked up from the specific tool's
+#   documentation.
+#
+#   In addition, the main script may generate, prior to the execution of the
+#   build tool the following exit codes for error conditions:
+#
+#      2                        Indicates an issue with the configuration of
+#                               the execution environment, such as the emptiness
+#                               of a mandatorily set configuration variable.
+#
 # AUTHOR
 #
 #    @Whisperity <whisperity-packages@protonmail.com>
 ################################################################################
 
 function distcc_build {
-  if [ ! -z "${DISTCC_HOSTS}" ]; then
+  if [ -n "${DISTCC_HOSTS}" ]; then
     echo "WARNING: Calling distcc_build, but environment variable DISTCC_HOSTS" \
       "is set to something. The build will **NOT** respect the already set" \
       "value!" >&2
