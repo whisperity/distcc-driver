@@ -43,7 +43,28 @@ case ${0##*/} in
 esac
 
 
-function _debug {
+_DCCSH_HAS_MISSING_TOOLS=0
+function _check_command {
+  # This script depends on some usually available tools for helper calculations.
+  # If these tools are not available, prevent loading the script.
+  if ! command -v "$1" >/dev/null; then
+    echo "ERROR: System utility '""$1""' is not installed!" \
+      "This script can not run." >&2
+    _DCCSH_HAS_MISSING_TOOLS=1
+  fi
+}
+
+_check_command awk
+_check_command curl
+_check_command grep
+_check_command sed
+
+if [ $_DCCSH_HAS_MISSING_TOOLS -ne 0 ]; then
+  exit 2
+fi
+
+
+function debug {
   # Prints all the arguments $@ (with the first argument $1 being "-n" for
   # skipping the newline printing), similarly to the built-in 'echo', with
   # an appropriate function prefix indicating where the debug printout was
@@ -56,9 +77,9 @@ function _debug {
   local caller_func="${FUNCNAME[1]}"
   # local file="${BASH_SOURCE[1]}"
   local line="${BASH_LINENO[0]}"
-  export _DCCSH_ECHO_N=0
+  _DCCSH_ECHO_N=0
   if [ "$1" == "-n" ]; then
-    export _DCCSH_ECHO_N=1
+    _DCCSH_ECHO_N=1
     shift 1
   fi
 
@@ -79,7 +100,23 @@ function print_configuration {
     return
   fi
 
-  _debug "DISTCC_AUTO_HOSTS:    $DISTCC_AUTO_HOSTS"
+  debug "DISTCC_AUTO_HOSTS:    $DISTCC_AUTO_HOSTS"
+}
+
+
+function unset_config_env_vars {
+  # Cleans up the environment of the executing shell by unsetting variables that
+  # were used as configuration inputs to the driver script.
+
+  unset DISTCC_AUTO_HOSTS
+}
+
+function unset_internal_env_vars {
+  # Cleans up the environment of the executing shell by unsetting variables that
+  # are otherwise globaly setl by this script for some cross-function purpose,
+  # but not needed for the executing process.
+
+  : # Noop.
 }
 
 
@@ -95,13 +132,13 @@ function parse_distcc_auto_hosts {
   # Parses the contents of the first argument $1 according to the
   # DISTCC_AUTO_HOSTS specification syntax.
   # The output is the parsed hosts transformed down to an internal syntax,
-  # in the following format: an array of "PROTOCOL/HOST/PORT/STAT_PORT"
-  # (**WITH** the quotes!).
+  # in the following format: an array of "PROTOCOL/HOST/PORT/STAT_PORT" entries.
+
   local DCCSH_HOSTS=()
 
   for hostspec in $1; do
     local original_hostspec="$hostspec"
-    _debug "Parsing DISTCC_AUTO_HOSTS entry: \"$hostspec\" ..."
+    debug "Parsing DISTCC_AUTO_HOSTS entry: \"$hostspec\" ..."
 
     local hostname
     local protocol
@@ -111,7 +148,7 @@ function parse_distcc_auto_hosts {
     case "$protocol" in
       "tcp"|*)
         protocol="tcp"
-        _debug "  - TCP"
+        debug "  - TCP"
 
         local match_ipv4
         local match_ipv6
@@ -120,15 +157,15 @@ function parse_distcc_auto_hosts {
         if [ -n "$match_ipv4" ]; then
           hostname="$match_ipv4"
           hostspec="${hostspec/"$hostname"/}"
-          _debug "  - Host (IPv4): $hostname"
+          debug "  - Host (IPv4): $hostname"
         elif [ -n "$match_ipv6" ]; then
-          hostname="$match_ipv6"
-          hostspec="${hostspec/\["$hostname"\]/}"
-          _debug "  - Host (IPv6): $hostname"
+          hostname="[$match_ipv6]"
+          hostspec="${hostspec/"$hostname"/}"
+          debug "  - Host (IPv6): $hostname"
         else
           hostname="$(echo "$hostspec" | grep -Eo '^([^:]*)')"
           hostspec="${hostspec/"$hostname"/}"
-          _debug "  - Host: $hostname"
+          debug "  - Host: $hostname"
         fi
         ;;
       # TODO: Implement handling local SSH tunnels for listening sockets.
@@ -143,7 +180,7 @@ function parse_distcc_auto_hosts {
       # the grammar definition for DISTCC_AUTO_HOSTS.
       job_port="$match_port"
       hostspec="${hostspec/":$job_port"/}"
-      _debug "  - Port: $job_port"
+      debug "  - Port: $job_port"
     fi
     match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
     if [ -n "$match_port" ]; then
@@ -151,7 +188,7 @@ function parse_distcc_auto_hosts {
       # "stats port", as per the grammar definition for DISTCC_AUTO_HOSTS.
       stat_port="$match_port"
       hostspec="${hostspec/":$stat_port"/}"
-      _debug "  - Stat: $stat_port"
+      debug "  - Stat: $stat_port"
     fi
 
     # After parsing, the hostspec should have emptied.
@@ -161,7 +198,7 @@ function parse_distcc_auto_hosts {
         "was ignored!" >&2
     fi
 
-    local result="\"$protocol/$hostname/$job_port/$stat_port\""
+    local result="$protocol/$hostname/$job_port/$stat_port"
     DCCSH_HOSTS+=("$result")
   done
 
@@ -170,16 +207,97 @@ function parse_distcc_auto_hosts {
 }
 
 
+function fetch_worker_capacity {
+  # Downloads and parses **one** DistCC host's "statistics" output to extract
+  # the server's capabilities and capacity from it.
+  # Returns the worker capacity/capability information:
+  # "THREAD_COUNT/LOAD_AVG/FREE_MEM".
+
+  debug "Querying host capacity: $worker_connection ..."
+
+  local worker_connection_fields
+  IFS='/' read -ra worker_connection_fields <<<"$1"
+  local hostname="${worker_connection_fields[1]}"
+  local stat_port="${worker_connection_fields[3]}"
+
+  local stat_response
+  stat_response="$(curl "$hostname:$stat_port" \
+    --connect-timeout "5" \
+    --max-time "10" \
+    --silent \
+    --show-error)"
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to query capacity of host" \
+      "\"${worker_connection_fields[0]}://$hostname:${worker_connection_fields[2]}\"!" \
+      "Likely the host is unavailable." \
+      "See curl error message above for details!" \
+      >&2
+    return 1
+  fi
+  debug -e "Raw DistCC --stats response:\n${stat_response}\n"
+
+  local dcc_max_kids
+  dcc_max_kids="$(echo "$stat_response" | grep "dcc_max_kids" | cut -d ' ' -f 2)"
+  debug "  - Threads: $dcc_max_kids"
+
+  local dcc_loads
+  dcc_loads=($(echo "$stat_response" | grep "dcc_load" | cut -d ' ' -f 2))
+  debug "  - Load: $dcc_loads"
+
+  # (Unfortunately, Bash's $(( )) does *NOT* support floats. Zsh would.)
+  local dcc_load_average="$(echo "${dcc_loads[@]}" | \
+    awk '{ print ($1 + $2 + $3) / 3 }')"
+  debug "  - Load avg: $dcc_load_average"
+
+  # FIXME: This is not implemented yet, only a proposal.
+  # (See http://github.com/distcc/distcc/issues/521 for details.)
+  local dcc_free_mem="-1"
+  # debug "  - Memory: $dcc_free_mem"
+
+  # Return value.
+  echo "$dcc_max_kids/$dcc_load_average/$dcc_free_mem"
+}
+
+function fetch_worker_capacities {
+  # Download and assemble the worker capacities for all the hosts specified as
+  # the function's variadic arguments.
+
+  local DCCSH_HOSTS_WITH_CAPS=()
+
+  for worker_connection in $@; do
+    local worker_capacity
+    worker_capacity="$(fetch_worker_capacity "$worker_connection")"
+    if [ $? -ne 0 ]; then
+      debug "Querying host capacity: $worker_connection FAILED!"
+      continue
+    fi
+
+    DCCSH_HOSTS_WITH_CAPS+=("$worker_connection"/"$worker_capacity")
+  done
+
+  # Return value.
+  echo "${DCCSH_HOSTS_WITH_CAPS[@]}"
+}
+
+
 function distcc_driver {
   # The main entry point to the implementation of the job deployment client.
-  _debug "Invoking command line is: $*"
+  debug "Invoking command line is: $*"
   print_configuration
 
   if [ -z "$DISTCC_AUTO_HOSTS" ]; then
-    echo "ERROR: 'distcc_driver' called without setting 'DISTCC_AUTO_HOSTS'!" >&2
+    echo "ERROR: 'distcc_driver' called without setting" \
+      "'DISTCC_AUTO_HOSTS'!" >&2
     exit 2
   fi
+
   local DCCSH_HOSTS=("$(parse_distcc_auto_hosts "${DISTCC_AUTO_HOSTS:=}")")
+  local DCCSH_WORKERS=("$(fetch_worker_capacities "$DCCSH_HOSTS")")
+
+  debug "Workers: ${DCCSH_WORKERS[@]}"
+
+  unset_internal_env_vars
+  unset_config_env_vars
 
   "$@"
 }
