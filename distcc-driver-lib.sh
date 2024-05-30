@@ -42,7 +42,7 @@ case ${0##*/} in
   *)
     echo "ERROR: The library script '${BASH_SOURCE[0]}' should not be" \
       "executed as a main script!" >&2
-    exit 2
+    exit 96
     ;;
 esac
 
@@ -74,7 +74,7 @@ _check_command grep
 _check_command sed
 
 if [ "$_DCCSH_HAS_MISSING_TOOLS" -ne 0 ]; then
-  exit 2
+  exit 96
 fi
 
 
@@ -416,7 +416,7 @@ function distcc_driver {
   if [ -z "$DISTCC_AUTO_HOSTS" ]; then
     echo "ERROR: 'distcc_driver' called without setting" \
       "'DISTCC_AUTO_HOSTS'!" >&2
-    exit 2
+    exit 96
   fi
 
 
@@ -470,7 +470,7 @@ function distcc_driver {
     echo "ERROR: Refusing to build!" >&2
     echo "There are NO remote workers available, and there is not enough" \
       "memory for local compilation." >&2
-    exit 3
+    exit 97
   fi
 
 

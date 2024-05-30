@@ -78,7 +78,7 @@
 #                                   distcc(1)) in case at least one remote
 #                                   server is available.
 #
-#     DISTCC_AUTO_COMPILER_MEMORY   The amount of memory use **in MiB** that is
+#     DISTCC_AUTO_COMPILER_MEMORY   The amount of memory **in MiB** that is
 #                                   expected to be consumed by a **single**
 #                                   compiler process, on average.
 #                                   This value is used to scale the number of
@@ -156,13 +156,13 @@
 #   In addition, the main script may generate, prior to the execution of the
 #   build tool, the following exit codes for error conditions:
 #
-#      2                        Indicates an issue with the configuration of
+#      96                       Indicates an issue with the configuration of
 #                               the execution environment, such as the emptiness
 #                               of a mandatory configuration variable, or the
 #                               lack of required system tools preventing normal
 #                               function.
 #
-#      3                        There is not enough system memory (RAM)
+#      97                       There is not enough system memory (RAM)
 #                               available on the local computer to run the
 #                               requested number of local compilations, and no
 #                               remote workers were available.
