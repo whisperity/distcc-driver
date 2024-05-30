@@ -8,10 +8,12 @@
 #
 #   distcc-driver-lib.sh
 #
-# SYNOPSIS
+#
+# SUMMARY
 #
 #   Underlying implementation of business logic for the DistCC remote auto-job
 #   script.
+#
 #
 # CONFIGURATION ENVIRONMENT VARIABLES
 #
@@ -21,9 +23,11 @@
 #     DCCSH_DEBUG               If defined to a non-empty string, additional
 #                               debugging and tracing information is printed.
 #
+#
 # AUTHOR
 #
 #    @Whisperity <whisperity-packages@protonmail.com>
+#
 ################################################################################
 
 

@@ -8,12 +8,15 @@
 #
 #   distcc.sh
 #
-# SYNOPSIS
+#
+# SUMMARY
 #
 #   Automatically distribute a C/C++ compilation over a DistCC-based cluster
 #   with job-count load balancing.
 #
+#   export DISTCC_AUTO_HOSTS="worker-1 worker-2 worker-3"
 #   source distcc.sh; distcc_build make target1 target2...
+#
 #
 # DESCRIPTION
 #
@@ -28,7 +31,7 @@
 #   drive the build with.
 #
 #   It is expected to call this script by prefixing a build command with the
-#   wrapper function's name, by specifying the hosts where distccd(1) servers
+#   wrapper function's name, and specifying the hosts where distccd(1) servers
 #   are listening.
 #   The called build tool should allow receiving a "-j" parameter, followed by
 #   a number.
@@ -38,7 +41,8 @@
 #   In this case, the real call under the hood will expand to something
 #   appropriate, such as:
 #
-#     DISTCC_HOSTS="server-1/16,lzo server-2/8,lzo" make foo -j 24
+#     DISTCC_HOSTS="localhost/8 server-1/16,lzo server-2/8,lzo" make foo -j 32
+#
 #
 # CONFIGURATION ENVIRONMENT VARIABLES
 #
@@ -48,9 +52,9 @@
 #                               by this script!
 #
 #     DISTCC_AUTO_HOSTS         The list of hosts to check and balance the
-#                               running compilation against.
+#                               number of running compilations against.
 #                               See the exact format below, under
-#                               HOST SPECIFICATION.
+#                               'HOST SPECIFICATION'.
 #                               Compared to DISTCC_HOSTS (**NOT** used by this
 #                               script!), the number of available job slots on
 #                               the server need not be specified.
@@ -67,7 +71,7 @@
 #
 #                                   Defaults to a reasonably large value of
 #                                   "1024", corresponding to 1 GiB of memory.
-#                                   (This value was empyrically verified to be
+#                                   (This value was empirically verified to be
 #                                   sufficient during the compilation of a
 #                                   large project such as LLVM.)
 #
@@ -75,6 +79,7 @@
 #
 #   Additional implementation-detail configuration variables exist in
 #   'distcc-driver-lib.sh', which need not be altered for normal operation.
+#
 #
 # HOST SPECIFICATION
 #
@@ -119,22 +124,25 @@
 #                               started with the "--stats" and optional
 #                               "--stats-port PORT" arguments.
 #
+#
 # EXIT CODES
 #
 #   When not indicated otherwise, the script will exit with the exit code of
 #   the build invocation command which was passed to 'distcc_build'.
+#   (In the above examples, this is the exit code of "make".)
 #   The actual build system might have and define various non-zero exit codes
 #   for error conditions, which should be looked up from the specific tool's
 #   documentation.
 #
 #   In addition, the main script may generate, prior to the execution of the
-#   build tool the following exit codes for error conditions:
+#   build tool, the following exit codes for error conditions:
 #
 #      2                        Indicates an issue with the configuration of
 #                               the execution environment, such as the emptiness
-#                               of a mandatorily set configuration variable, or
-#                               the lack of required system tools preventing
-#                               normal function.
+#                               of a mandatory configuration variable, or the
+#                               lack of required system tools preventing normal
+#                               function.
+#
 #
 # AUTHOR
 #

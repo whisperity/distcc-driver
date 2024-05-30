@@ -8,12 +8,15 @@
 #
 #   distcc.zsh
 #
-# SYNOPSIS
+#
+# SUMMARY
 #
 #   Automatically distribute a C/C++ compilation over a DistCC-based cluster
 #   with job-count load balancing.
 #
+#   export DISTCC_AUTO_HOSTS="worker-1 worker-2 worker-3"
 #   source distcc.zsh; distcc_build make target1 target2...
+#
 #
 # DESCRIPTION
 #
@@ -22,13 +25,16 @@
 #
 #   See documentation of 'distcc.sh'.
 #
+#
 # CONFIGURATION ENVIRONMENT VARIABLES
 #
 #   See documentation of 'distcc.sh'.
 #
+#
 # EXIT CODES
 #
 #   See documentation of 'distcc.sh'.
+#
 #
 # AUTHOR
 #
