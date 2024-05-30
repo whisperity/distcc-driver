@@ -226,6 +226,7 @@ function fetch_worker_capacity {
     --max-time "10" \
     --silent \
     --show-error)"
+  # shellcheck disable=SC2181
   if [ $? -ne 0 ]; then
     echo "ERROR: Failed to query capacity of host" \
       "\"${worker_connection_fields[0]}://$hostname:${worker_connection_fields[2]}\"!" \
@@ -234,18 +235,21 @@ function fetch_worker_capacity {
       >&2
     return 1
   fi
-  debug -e "Raw DistCC --stats response:\n${stat_response}\n"
+  # debug -e "Raw DistCC --stats response:\n${stat_response}"
 
   local dcc_max_kids
-  dcc_max_kids="$(echo "$stat_response" | grep "dcc_max_kids" | cut -d ' ' -f 2)"
+  dcc_max_kids="$(echo "$stat_response" | grep "dcc_max_kids" \
+    | cut -d ' ' -f 2)"
   debug "  - Threads: $dcc_max_kids"
 
   local dcc_loads
-  dcc_loads=($(echo "$stat_response" | grep "dcc_load" | cut -d ' ' -f 2))
-  debug "  - Load: $dcc_loads"
+  mapfile -t dcc_loads -n 3 < \
+    <(echo "$stat_response" | grep "dcc_load" | cut -d ' ' -f 2)
+  debug "  - Load: ${dcc_loads[*]}"
 
   # (Unfortunately, Bash's $(( )) does *NOT* support floats. Zsh would.)
-  local dcc_load_average="$(echo "${dcc_loads[@]}" | \
+  local dcc_load_average
+  dcc_load_average="$(echo "${dcc_loads[@]}" | \
     awk '{ print ($1 + $2 + $3) / 3 }')"
   debug "  - Load avg: $dcc_load_average"
 
@@ -264,9 +268,10 @@ function fetch_worker_capacities {
 
   local DCCSH_HOSTS_WITH_CAPS=()
 
-  for worker_connection in $@; do
+  for worker_connection in $1; do
     local worker_capacity
     worker_capacity="$(fetch_worker_capacity "$worker_connection")"
+    # shellcheck disable=SC2181
     if [ $? -ne 0 ]; then
       debug "Querying host capacity: $worker_connection FAILED!"
       continue
@@ -292,9 +297,9 @@ function distcc_driver {
   fi
 
   local DCCSH_HOSTS=("$(parse_distcc_auto_hosts "${DISTCC_AUTO_HOSTS:=}")")
-  local DCCSH_WORKERS=("$(fetch_worker_capacities "$DCCSH_HOSTS")")
+  local DCCSH_WORKERS=("$(fetch_worker_capacities "${DCCSH_HOSTS[@]}")")
 
-  debug "Workers: ${DCCSH_WORKERS[@]}"
+  debug "Workers: ${DCCSH_WORKERS[*]}"
 
   unset_internal_env_vars
   unset_config_env_vars
