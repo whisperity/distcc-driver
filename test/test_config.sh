@@ -35,3 +35,42 @@ test_parse_distcc_auto_hosts() {
     "$(parse_distcc_auto_hosts \
       "worker-machine-1:1234:5678 worker-machine-2:1234:5678")"
 }
+
+
+test_scale_worker_job_counts() {
+  assert_equals \
+    "tcp/localhost/3632/3633/16/0/-1" \
+    "$(scale_worker_job_counts 20480 "tcp/localhost/3632/3633/16/0/-1")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633/16/0/8192" \
+    "$(scale_worker_job_counts 0 "tcp/localhost/3632/3633/16/0/8192")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633/16/0/-1" \
+    "$(scale_worker_job_counts 10240 "tcp/localhost/3632/3633/16/0/-1")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633/1/0/1024" \
+    "$(scale_worker_job_counts 1024 "tcp/localhost/3632/3633/16/0/1024")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633/1/0/1024 tcp/localhost/1234/5678/1/0/1024" \
+    "$(scale_worker_job_counts 1024 \
+      "tcp/localhost/3632/3633/16/0/1024 tcp/localhost/1234/5678/8/0/1024")"
+
+  assert_equals \
+    "" \
+    "$(scale_worker_job_counts 2048 \
+      "tcp/localhost/3632/3633/16/0/1024 tcp/localhost/1234/5678/8/0/1024")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633/5/0/10240" \
+    "$(scale_worker_job_counts 2048 \
+      "tcp/localhost/3632/3633/16/0/10240 tcp/localhost/1234/5678/8/0/1024")"
+
+  assert_equals \
+    "tcp/localhost/1234/5678/5/0/10240" \
+    "$(scale_worker_job_counts 2048 \
+      "tcp/localhost/3632/3633/16/0/1024 tcp/localhost/1234/5678/8/0/10240")"
+}

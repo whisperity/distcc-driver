@@ -12,17 +12,6 @@
 #
 # DESCRIPTION
 #
-#    Helper script that allows remotely building through distcc(1).
-#    Instead of just having distcc rely on its DISTCC_HOSTS environment
-#    variable and the --jobs argument of the build tool given by the user,
-#    this script automatically checks the available remotes and selects a
-#    good enough job count.
-#
-#    This script requires calling a build tool that can accept a '-j'
-#    parameter. The above example in :SYNOPSIS can, for example, expand to:
-#
-#        DISTCC_HOSTS="foo/8" make my_target -j8
-#
 #    This script depends on having ccache(1) installed and configured as your
 #    C(++) building system. This generally means that the CC and CXX compilers
 #    in your build process should come from /usr/lib/ccache.
@@ -32,11 +21,6 @@
 #    with SSH tunnels.
 #
 # ENVIRONMENT VARIABLES
-#
-#    DISTCC_PORTS          A string in the format of "port/jobs port/jobs"
-#                          that specifies which ports should be used as build
-#                          machines and which machine can handle how many jobs.
-#                          Default empty value means no remote builds.
 #
 #    DISTCC_NUM_FIRST_LOCAL
 #                          The number of jobs to prefer handling locally,
@@ -59,13 +43,6 @@
 #                          instead of bailing out immediately, scale down the
 #                          number of local jobs to a manageable amount.
 #                          Defaults to empty value which means prefer bailing.
-#
-#    DISTCC_LOCAL_MEM      The amount of memory *in MiB* to require to be free
-#                          per thread of compilation that is executed
-#                          *locally*. The local compilations include at most
-#                          DISTCC_NUM_FIRST_LOCAL jobs if remotes are found,
-#                          or DISTCC_NUM_ONLY_LOCAL if no remotes work.
-#
 #
 # HOW TO SET UP SSH TUNNEL
 #
@@ -98,11 +75,9 @@
 ################################################################################
 
 function _dccsh_dump_config {
-    _dccsh_debug "DISTCC_PORTS:             $DISTCC_PORTS"
     _dccsh_debug "DISTCC_NUM_FIRST_LOCAL:   $DISTCC_NUM_FIRST_LOCAL"
     _dccsh_debug "DISTCC_NUM_ONLY_LOCAL:    $DISTCC_NUM_ONLY_LOCAL"
     _dccsh_debug "DISTCC_NUM_LOCAL_SCALING: $DISTCC_NUM_LOCAL_SCALING"
-    _dccsh_debug "DISTCC_LOCAL_MEM:         $DISTCC_LOCAL_MEM"
 }
 
 # Returns true if $1 is listening on the local machine.
@@ -258,7 +233,6 @@ function _dccsh_cleanup_vars {
     DCCSH_TOTAL_JOBS=0
     DCCSH_LOCAL_JOBS=0
     DCCSH_MEM_PER_BUILD=0
-    _ECHO_N=""
 }
 
 # Actually executes the build with having DISTCC_HOSTS set and ccache set

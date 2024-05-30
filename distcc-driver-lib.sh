@@ -15,8 +15,8 @@
 #
 # CONFIGURATION ENVIRONMENT VARIABLES
 #
-#   For most user-facing configuration variables, please see 'distcc.sh'
-#   instead.
+#   For most user-facing configuration variables, please see the documentation
+#   of 'distcc.sh' instead.
 #
 #     DCCSH_DEBUG               If defined to a non-empty string, additional
 #                               debugging and tracing information is printed.
@@ -43,10 +43,18 @@ case ${0##*/} in
 esac
 
 
+# Set up configuration variables that are holding the default value for the
+# user-configurable options.
+_DCCSH_DEFAULT_DISTCC_PORT=3632
+_DCCSH_DEFAULT_STATS_PORT=3633
+_DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY=1024
+
+
 _DCCSH_HAS_MISSING_TOOLS=0
 function _check_command {
   # This script depends on some usually available tools for helper calculations.
   # If these tools are not available, prevent loading the script.
+
   if ! command -v "$1" >/dev/null; then
     echo "ERROR: System utility '""$1""' is not installed!" \
       "This script can not run." >&2
@@ -69,7 +77,8 @@ function debug {
   # skipping the newline printing), similarly to the built-in 'echo', with
   # an appropriate function prefix indicating where the debug printout was
   # called from.
-  if [ -z "$DCSSH_DEBUG" ]; then
+
+  if [ -z "$DCCSH_DEBUG" ]; then
     return
   fi
 
@@ -94,22 +103,41 @@ function debug {
 }
 
 
+function array {
+  # Joins the array elements specified $2 and onwards by the delimiter character
+  # specified in $1.
+  # Returns the joint array a single string.
+  #
+  # Adapted from http://stackoverflow.com/a/17841619.
+
+  local delimiter=${1-}
+  local first=${2-}
+
+  if ! shift 2; then
+    return 0
+  fi
+
+  if [[ "$first" == *"$delimiter"* || "$*" == *"$delimiter"* ]]; then
+    echo "array: ERROR: Requested delimiter '""$delimiter""' found in" \
+      "input elements: $first $*" >&2
+    return 1
+  fi
+
+  printf "%s" "$first" "${@/#/$delimiter}"
+  return 0
+}
+
+
 function print_configuration {
   # Print the input configuration options that are relevant for debugging.
-  if [ -z "$DCSSH_DEBUG" ]; then
+  if [ -z "$DCCSH_DEBUG" ]; then
     return
   fi
 
-  debug "DISTCC_AUTO_HOSTS:    $DISTCC_AUTO_HOSTS"
+  debug "DISTCC_AUTO_HOSTS:            $DISTCC_AUTO_HOSTS"
+  debug "DISTCC_AUTO_COMPILER_MEMORY:  $DISTCC_AUTO_COMPILER_MEMORY"
 }
 
-
-function unset_config_env_vars {
-  # Cleans up the environment of the executing shell by unsetting variables that
-  # were used as configuration inputs to the driver script.
-
-  unset DISTCC_AUTO_HOSTS
-}
 
 function unset_internal_env_vars {
   # Cleans up the environment of the executing shell by unsetting variables that
@@ -171,8 +199,8 @@ function parse_distcc_auto_hosts {
       # TODO: Implement handling local SSH tunnels for listening sockets.
     esac
 
-    local job_port=3632
-    local stat_port=3633
+    local job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
+    local stat_port="$_DCCSH_DEFAULT_STATS_PORT"
     local match_port
     match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
     if [ -n "$match_port" ]; then
@@ -194,12 +222,12 @@ function parse_distcc_auto_hosts {
     # After parsing, the hostspec should have emptied.
     if [ -n "$hostspec" ]; then
       echo "WARNING: Parsing of malformed DISTCC_AUTO_HOSTS entry" \
-        "\"$original_hostspec\" did not conclude cleanly and \"$hostspec\"" \
+        "\"$original_hostspec\" did not conclude cleanly, and \"$hostspec\"" \
         "was ignored!" >&2
     fi
 
-    local result="$protocol/$hostname/$job_port/$stat_port"
-    DCCSH_HOSTS+=("$result")
+    DCCSH_HOSTS+=("$(array '/' \
+      "$protocol" "$hostname" "$job_port" "$stat_port")")
   done
 
   # Return value.
@@ -208,10 +236,9 @@ function parse_distcc_auto_hosts {
 
 
 function fetch_worker_capacity {
-  # Downloads and parses **one** DistCC host's "statistics" output to extract
-  # the server's capabilities and capacity from it.
-  # Returns the worker capacity/capability information:
-  # "THREAD_COUNT/LOAD_AVG/FREE_MEM".
+  # Downloads and parses **one** DistCC host's ($1) "statistics" output to
+  # extract the server's capacity and statistical details from it.
+  # Returns the worker capacity information: "THREAD_COUNT/LOAD_AVG/FREE_MEM".
 
   debug "Querying host capacity: $worker_connection ..."
 
@@ -259,12 +286,14 @@ function fetch_worker_capacity {
   # debug "  - Memory: $dcc_free_mem"
 
   # Return value.
-  echo "$dcc_max_kids/$dcc_load_average/$dcc_free_mem"
+  array '/' "$dcc_max_kids" "$dcc_load_average" "$dcc_free_mem"
 }
 
 function fetch_worker_capacities {
-  # Download and assemble the worker capacities for all the hosts specified as
-  # the function's variadic arguments.
+  # Download and assemble the worker capacities for all the hosts specified in
+  # $1.
+  # Returns the worker host specifications concatenated with the capacity
+  # information for each array element.
 
   local DCCSH_HOSTS_WITH_CAPS=()
 
@@ -285,8 +314,61 @@ function fetch_worker_capacities {
 }
 
 
+function scale_worker_job_counts {
+  # Calculates how many jobs should be dispatched (at maximum) to each already
+  # queried worker in $2, based on the workers' capacities and the expected
+  # per-job memory use value passed under $1.
+
+  local requested_per_job_mem="$1"
+  if [ "$requested_per_job_mem" -le 0 ]; then
+    # Return value.
+    echo "$2"
+    return
+  fi
+
+  local DCCSH_WORKERS=()
+
+  for worker_specification in $2; do
+    local worker_specification_fields
+    IFS='/' read -ra worker_specification_fields <<<"$worker_specification"
+
+    local available_memory="${worker_specification_fields[6]}"
+    if [ "$available_memory" == "-1" ]; then
+      # If no memory information is available about the worker, assume that it
+      # will be able to handle the number of jobs it exposes that it could
+      # handle, and do not do any scaling.
+      DCCSH_WORKERS+=("$worker_specification")
+      continue
+    fi
+
+    local thread_count="${worker_specification_fields[4]}"
+    local scaled_thread_count="$(( available_memory / requested_per_job_mem ))"
+
+    if [ "$scaled_thread_count" -eq 0 ]; then
+      debug "Skipping worker as job count would scale to 0:" \
+        "$protocol://$hostname:$job_port"
+      continue
+    elif [ "$scaled_thread_count" -lt "$thread_count" ]; then
+      local protocol="${worker_specification_fields[0]}"
+      local hostname="${worker_specification_fields[1]}"
+      local job_port="${worker_specification_fields[2]}"
+      debug "Scaling # of jobs from $thread_count to" \
+        "$scaled_thread_count for worker: $protocol://$hostname:$job_port"
+
+      worker_specification_fields[4]="$scaled_thread_count"
+    fi
+
+    DCCSH_WORKERS+=("$(array '/' "${worker_specification_fields[@]}")")
+  done
+
+  # Return value.
+  echo "${DCCSH_WORKERS[@]}"
+}
+
+
 function distcc_driver {
   # The main entry point to the implementation of the job deployment client.
+
   debug "Invoking command line is: $*"
   print_configuration
 
@@ -299,10 +381,24 @@ function distcc_driver {
   local DCCSH_HOSTS=("$(parse_distcc_auto_hosts "${DISTCC_AUTO_HOSTS:=}")")
   local DCCSH_WORKERS=("$(fetch_worker_capacities "${DCCSH_HOSTS[@]}")")
 
-  debug "Workers: ${DCCSH_WORKERS[*]}"
+  local requested_per_job_mem
+  if [ "$DISTCC_AUTO_COMPILER_MEMORY" == "0" ]; then
+    debug "DISTCC_AUTO_COMPILER_MEMORY set to \"0\" - Skip scaling workers"
+  else
+    requested_per_job_mem="${DISTCC_AUTO_COMPILER_MEMORY:-"$_DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY"}"
+    DCCSH_WORKERS=("$(scale_worker_job_counts \
+      "$requested_per_job_mem" \
+      "${DCCSH_WORKERS[@]}")")
+  fi
 
+  debug "Final worker specification: ${DCCSH_WORKERS[*]}"
+
+
+  # Clean up the environment of the executed main command by unsetting variables
+  # that were used as configuration inputs to the driver script.
   unset_internal_env_vars
-  unset_config_env_vars
-
-  "$@"
+  env \
+    --unset="DISTCC_AUTO_HOSTS" \
+    --unset="DISTCC_AUTO_COMPILER_MEMORY" \
+    "$@"
 }

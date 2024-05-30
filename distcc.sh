@@ -17,6 +17,29 @@
 #
 # DESCRIPTION
 #
+#   This script allows remotely building C/C++ projects through a distcc(1)
+#   cluster.
+#   However, instead of requiring the user to manually configure DISTCC_HOSTS,
+#   which has a required and non-trivial format (such as specifying the number
+#   of jobs to dispatch to a server) and making sure that the called build
+#   system is also given an appropriate "--jobs N" parameter, this script
+#   automatically balances the available server list, prevents dispatching to
+#   servers that do not reply to jobs, and selects the appropriate job count to
+#   drive the build with.
+#
+#   It is expected to call this script by prefixing a build command with the
+#   wrapper function's name, by specifying the hosts where distccd(1) servers
+#   are listening.
+#   The called build tool should allow receiving a "-j" parameter, followed by
+#   a number.
+#
+#     DISTCC_AUTO_HOSTS="server-1 server-2" distcc_build make foo
+#
+#   In this case, the real call under the hood will expand to something
+#   appropriate, such as:
+#
+#     DISTCC_HOSTS="server-1/16,lzo server-2/8,lzo" make foo -j 24
+#
 # CONFIGURATION ENVIRONMENT VARIABLES
 #
 #     DISTCC_HOSTS              The original, official remote worker
@@ -29,7 +52,26 @@
 #                               See the exact format below, under
 #                               HOST SPECIFICATION.
 #                               Compared to DISTCC_HOSTS (**NOT** used by this
-#                               script!)
+#                               script!), the number of available job slots on
+#                               the server need not be specified.
+#
+#     DISTCC_AUTO_COMPILER_MEMORY   The amount of memory use **in MiB** that is
+#                                   expected to be consumed by a **single**
+#                                   compiler process, on average.
+#                                   This value is used to scale the number of
+#                                   jobs dispatched to a worker, if such
+#                                   calculation is applicable.
+#                                   It is usually not necessary to tweak this
+#                                   value prior to encountering performance
+#                                   issues.
+#
+#                                   Defaults to a reasonably large value of
+#                                   "1024", corresponding to 1 GiB of memory.
+#                                   (This value was empyrically verified to be
+#                                   sufficient during the compilation of a
+#                                   large project such as LLVM.)
+#
+#                                   Set to "0" to disable the automatic scaling.
 #
 #   Additional implementation-detail configuration variables exist in
 #   'distcc-driver-lib.sh', which need not be altered for normal operation.
@@ -90,18 +132,23 @@
 #
 #      2                        Indicates an issue with the configuration of
 #                               the execution environment, such as the emptiness
-#                               of a mandatorily set configuration variable.
+#                               of a mandatorily set configuration variable, or
+#                               the lack of required system tools preventing
+#                               normal function.
 #
 # AUTHOR
 #
 #    @Whisperity <whisperity-packages@protonmail.com>
+#
 ################################################################################
+
 
 function distcc_build {
   if [ -n "${DISTCC_HOSTS}" ]; then
-    echo "WARNING: Calling distcc_build, but environment variable DISTCC_HOSTS" \
-      "is set to something. The build will **NOT** respect the already set" \
-      "value!" >&2
+    echo "WARNING: Calling distcc_build, but environment variable" \
+      "DISTCC_HOSTS is set to something." \
+      "The build will **NOT** respect the already set value!" \
+      >&2
   fi
 
   env \
