@@ -22,27 +22,11 @@
 #
 # ENVIRONMENT VARIABLES
 #
-#    DISTCC_NUM_FIRST_LOCAL
-#                          The number of jobs to prefer handling locally,
-#                          before giving work to the build machines.
-#                          Recommended to set to a small enough number so that
-#                          compilations of a few translation units do not load
-#                          the network.
-#                          Defaults to 0, in which case only remote build
-#                          happens.
-#
 #    DISTCC_NUM_ONLY_LOCAL
 #                          The number of jobs to run locally if *NO* remote
 #                          machines are found available.
 #                          Defaults to $(nproc), the number of cores available.
 #
-#    DISTCC_NUM_LOCAL_SCALING
-#                          If defined and too much memory would be needed by
-#                          the local jobs (as calculated by
-#                          DISTCC_NUM_{FIRST|ONLY}_LOCAL * DISTCC_LOCAL_MEM),
-#                          instead of bailing out immediately, scale down the
-#                          number of local jobs to a manageable amount.
-#                          Defaults to empty value which means prefer bailing.
 #
 # HOW TO SET UP SSH TUNNEL
 #
@@ -64,20 +48,13 @@
 #
 #        ssh mybuild1 'exit'; ssh -CNq mybuild1 &!
 #
-# EXIT CODES
-#
-#    -6                    Returned if not enough memory are present to run
-#                          local compilations.
-#
 # AUTHOR
 #
 #    Whisperity (http://github.com/Whisperity)
 ################################################################################
 
 function _dccsh_dump_config {
-    _dccsh_debug "DISTCC_NUM_FIRST_LOCAL:   $DISTCC_NUM_FIRST_LOCAL"
     _dccsh_debug "DISTCC_NUM_ONLY_LOCAL:    $DISTCC_NUM_ONLY_LOCAL"
-    _dccsh_debug "DISTCC_NUM_LOCAL_SCALING: $DISTCC_NUM_LOCAL_SCALING"
 }
 
 # Returns true if $1 is listening on the local machine.
@@ -144,20 +121,10 @@ function _dccsh_parse_distcc_ports {
 # Parameters: $1 - DISTCC_NUM_ONLY_LOCAL, $2 - DISTCC_NUM_FIRST_LOCAL.
 function _dccsh_calculate_local_workers {
     if [ $DCCSH_TOTAL_JOBS -eq 0 ]; then
-        _dccsh_debug "No working remote found."
-
         local LOCAL_JOB=$1
         if [ -z $LOCAL_JOB -o $LOCAL_JOB -eq -1 ]; then
             _dccsh_debug "DISTCC_NUM_ONLY_LOCAL unset, defaulting to '$(nproc)'"
             LOCAL_JOB=$(nproc)
-        fi
-    else
-        _dccsh_debug "Working remotes found."
-
-        local LOCAL_JOB=$2
-        if [ -z "$LOCAL_JOB" -o $LOCAL_JOB -eq -1 ]; then
-            _dccsh_debug "DISTCC_NUM_FIRST_LOCAL unset, defaulting to '0'"
-            LOCAL_JOB=0
         fi
     fi
 
@@ -176,50 +143,6 @@ function _dccsh_append_localhost {
         _dccsh_debug "Local job count was $DCCSH_LOCAL_JOBS, not appending" \
             "'localhost'"
     fi
-}
-
-# Checks whether there is enough memory available for all the local jobs.
-function _dccsh_check_memory {
-    if [ $DCCSH_LOCAL_JOBS -eq 0 ]; then
-        _dccsh_debug "no local jobs, not checking memory use..."
-        return 0  # OK.
-    fi
-
-    DCCSH_MEM_PER_BUILD=$DISTCC_LOCAL_MEM
-    if [ -z "$DCCSH_MEM_PER_BUILD" ]; then
-        _dccsh_debug "DISTCC_LOCAL_MEM unset, defaulting to '1024'"
-        DCCSH_MEM_PER_BUILD=1024
-    fi
-
-    _dccsh_debug "Checking if $DCCSH_LOCAL_JOBS * $DCCSH_MEM_PER_BUILD MiB" \
-        "memory available"
-    local NEEDED_MEM=$(($DCCSH_MEM_PER_BUILD * $DCCSH_LOCAL_JOBS))
-    _dccsh_debug "Needed mem: $NEEDED_MEM MiB"
-    local AVAILABLE_MEM=$(("$(free | grep 'Mem:' | awk '{ print $7 }')" / 1024))
-    _dccsh_debug "Available memory right now: $AVAILABLE_MEM MiB"
-
-    if [ $AVAILABLE_MEM -lt $NEEDED_MEM ]; then
-        echo "Available memory: $AVAILABLE_MEM MiB" >&2
-        echo "Needed memory: $NEEDED_MEM MiB" >&2
-        return 1
-    fi
-}
-
-# Scales down how much local workers could be done based on the environment and
-# available resources.
-function _dccsh_scale_local_workers {
-    if [ -z "$DISTCC_NUM_LOCAL_SCALING" ]; then
-        _dccsh_debug "Refusing to scale: user did not specify" \
-            "'DISTCC_NUM_LOCAL_SCALING'"
-        echo 0
-        return
-    fi
-
-    local AVAILABLE_MEM=$(("$(free | grep 'Mem:' | awk '{ print $7 }')" / 1024))
-    local NEW_WORKER_COUNT=$(($AVAILABLE_MEM / $DCCSH_MEM_PER_BUILD))
-    _dccsh_debug "Scaling local worker count to $NEW_WORKER_COUNT to fit memory"
-
-    echo $NEW_WORKER_COUNT
 }
 
 # Appends additional jobs to the total allowed job count for preprocessing.
@@ -255,18 +178,6 @@ function distcc_build {
 
     _dccsh_calculate_local_workers \
             ${DISTCC_NUM_ONLY_LOCAL:-"-1"} ${DISTCC_NUM_FIRST_LOCAL:-"-1"}
-    _dccsh_check_memory
-    if [ $? -ne 0 ]; then
-        local NEW_WORKER_COUNT=$(_dccsh_scale_local_workers)
-        if [ $NEW_WORKER_COUNT -eq 0 ]; then
-            echo "[ERROR] Refusing to build: not enough memory for local jobs!" >&2
-            return -6
-        fi
-
-        # Recalculate the number of local workers in the DCCSH_ variables
-        # after scaling was performed.
-        _dccsh_calculate_local_workers $NEW_WORKER_COUNT $NEW_WORKER_COUNT
-    fi
 
     _dccsh_append_localhost
     _dccsh_append_preprocess_jobs

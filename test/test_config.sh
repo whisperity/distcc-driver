@@ -74,3 +74,14 @@ test_scale_worker_job_counts() {
     "$(scale_worker_job_counts 2048 \
       "tcp/localhost/3632/3633/16/0/1024 tcp/localhost/1234/5678/8/0/10240")"
 }
+
+test_scale_local_job_count() {
+  assert_equals 0 "$(scale_local_job_count 0 1024 10240)"
+  assert_equals 10 "$(scale_local_job_count 16 1024 10240)"
+  assert_equals 16 "$(scale_local_job_count 16 1024 0)"
+  assert_equals 16 "$(scale_local_job_count 16 0 0)"
+  assert_equals 16 "$(scale_local_job_count 16 0 10240)"
+
+  assert_equals 8 "$(scale_local_job_count 8 1024 10240)"
+  assert_equals 5 "$(scale_local_job_count 8 2048 10240)"
+}

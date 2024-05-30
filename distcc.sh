@@ -59,6 +59,25 @@
 #                               script!), the number of available job slots on
 #                               the server need not be specified.
 #
+#     DISTCC_AUTO_EARLY_LOCAL_JOBS  The number of jobs to handle **WITHOUT**
+#                                   distributing them to a worker, entirely on
+#                                   the local machine.
+#                                   The local invocation of the compilers will
+#                                   take priority over any remote compilation,
+#                                   which enables not loading the network with
+#                                   jobs if only a few actual compilations would
+#                                   be executed by the build system.
+#
+#                                   It is recommended to set this to a small
+#                                   value, e.g., "2" or "4", depending on
+#                                   project-specific conditions.
+#
+#                                   Defaults to "0", which results in **NO**
+#                                   local compilations (except for the fallback
+#                                   or failed-job-retry as employed by
+#                                   distcc(1)) in case at least one remote
+#                                   server is available.
+#
 #     DISTCC_AUTO_COMPILER_MEMORY   The amount of memory use **in MiB** that is
 #                                   expected to be consumed by a **single**
 #                                   compiler process, on average.
@@ -142,6 +161,11 @@
 #                               of a mandatory configuration variable, or the
 #                               lack of required system tools preventing normal
 #                               function.
+#
+#      3                        There is not enough system memory (RAM)
+#                               available on the local computer to run the
+#                               requested number of local compilations, and no
+#                               remote workers were available.
 #
 #
 # AUTHOR

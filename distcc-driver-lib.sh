@@ -52,6 +52,7 @@ esac
 _DCCSH_DEFAULT_DISTCC_PORT=3632
 _DCCSH_DEFAULT_STATS_PORT=3633
 _DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY=1024
+_DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS=0
 
 
 _DCCSH_HAS_MISSING_TOOLS=0
@@ -68,10 +69,11 @@ function _check_command {
 
 _check_command awk
 _check_command curl
+_check_command free
 _check_command grep
 _check_command sed
 
-if [ $_DCCSH_HAS_MISSING_TOOLS -ne 0 ]; then
+if [ "$_DCCSH_HAS_MISSING_TOOLS" -ne 0 ]; then
   exit 2
 fi
 
@@ -140,6 +142,7 @@ function print_configuration {
 
   debug "DISTCC_AUTO_HOSTS:            $DISTCC_AUTO_HOSTS"
   debug "DISTCC_AUTO_COMPILER_MEMORY:  $DISTCC_AUTO_COMPILER_MEMORY"
+  debug "DISTCC_AUTO_EARLY_LOCAL_JOBS: $DISTCC_AUTO_EARLY_LOCAL_JOBS"
 }
 
 
@@ -347,17 +350,17 @@ function scale_worker_job_counts {
 
     local thread_count="${worker_specification_fields[4]}"
     local scaled_thread_count="$(( available_memory / requested_per_job_mem ))"
-
     if [ "$scaled_thread_count" -eq 0 ]; then
-      debug "Skipping worker as job count would scale to 0:" \
+      debug "Skipping worker (available memory: $available_memory MiB):" \
         "$protocol://$hostname:$job_port"
       continue
     elif [ "$scaled_thread_count" -lt "$thread_count" ]; then
       local protocol="${worker_specification_fields[0]}"
       local hostname="${worker_specification_fields[1]}"
       local job_port="${worker_specification_fields[2]}"
-      debug "Scaling # of jobs from $thread_count to" \
-        "$scaled_thread_count for worker: $protocol://$hostname:$job_port"
+      debug "Scaling down worker \"$protocol://$hostname:$job_port\"" \
+        "(available memory: $available_memory MiB):" \
+        "$thread_count -> $scaled_thread_count"
 
       worker_specification_fields[4]="$scaled_thread_count"
     fi
@@ -369,9 +372,43 @@ function scale_worker_job_counts {
   echo "${DCCSH_WORKERS[@]}"
 }
 
+function scale_local_job_count {
+  # Calculates how many jobs should be run (at maximum) immediately on the local
+  # machine based on the number of **requested** local jobs in $1 and the
+  # per-job expected memory consumption in $2, and the amount of available
+  # memory in $3.
+  # Returns the number of jobs to schedule, which might be "0" if no local work
+  # should or could be done.
+
+  local local_jobs="$1"
+  local requested_per_job_mem="$2"
+  local available_memory="$3"
+  if [ "$local_jobs" -eq 0 ] \
+      || [ "$requested_per_job_mem" -le 0 ] \
+      || [ "$available_memory" -le 0 ]; then
+    # Return value.
+    echo "$local_jobs"
+    return
+  fi
+
+  local scaled_thread_count="$(( available_memory / requested_per_job_mem ))"
+  if [ "$scaled_thread_count" -eq 0 ]; then
+    debug "Skipping local jobs (not enough RAM)"
+    local_jobs="0"
+  elif [ "$scaled_thread_count" -lt "$local_jobs" ]; then
+    debug "Scaling local jobs (not enough RAM):" \
+      "$local_jobs -> $scaled_thread_count"
+    local_jobs="$scaled_thread_count"
+  fi
+
+  # Return value.
+  echo "$local_jobs"
+}
+
 
 function distcc_driver {
   # The main entry point to the implementation of the job deployment client.
+
 
   debug "Invoking command line is: $*"
   print_configuration
@@ -382,12 +419,13 @@ function distcc_driver {
     exit 2
   fi
 
+
   local DCCSH_HOSTS=("$(parse_distcc_auto_hosts "${DISTCC_AUTO_HOSTS:=}")")
   local DCCSH_WORKERS=("$(fetch_worker_capacities "${DCCSH_HOSTS[@]}")")
 
   local requested_per_job_mem
   if [ "$DISTCC_AUTO_COMPILER_MEMORY" == "0" ]; then
-    debug "DISTCC_AUTO_COMPILER_MEMORY set to \"0\" - Skip scaling workers"
+    debug "DISTCC_AUTO_COMPILER_MEMORY == \"0\": Skip scaling workers"
   else
     requested_per_job_mem="${DISTCC_AUTO_COMPILER_MEMORY:-"$_DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY"}"
     DCCSH_WORKERS=("$(scale_worker_job_counts \
@@ -395,7 +433,45 @@ function distcc_driver {
       "${DCCSH_WORKERS[@]}")")
   fi
 
-  debug "Final worker specification: ${DCCSH_WORKERS[*]}"
+  debug "Effective remote specification:"
+  # shellcheck disable=SC2068
+  for worker_specification in ${DCCSH_WORKERS[@]}; do
+    debug "  - $worker_specification"
+  done
+
+
+  local requested_local_jobs
+  if [ "${#DCCSH_WORKERS}" -ne 0 ]; then
+    requested_local_jobs="${DISTCC_AUTO_EARLY_LOCAL_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS"}"
+    debug "Requesting $requested_local_jobs local jobs ..." \
+      "(from DISTCC_AUTO_EARLY_LOCAL_JOBS)"
+  else
+    # FIXME: (Re-)implement falling back to $(nproc) jobs in a configurable way
+    # if no remotes exist.
+    requested_local_jobs=$(nproc)
+  fi
+
+  if [ "$requested_local_jobs" -eq 0 ]; then
+    debug "Local job count == 0: Skip scaling local"
+  else
+    local available_local_memory
+    available_local_memory="$(free -m | grep "^Mem:" | awk '{ print $7 }')"
+    debug "  - \"Available\" memory: $available_local_memory MiB"
+
+    requested_local_jobs="$(scale_local_job_count \
+      "$requested_local_jobs" \
+      "$requested_per_job_mem" \
+      "$available_local_memory")"
+    debug "  - Local job #: $requested_local_jobs"
+  fi
+
+
+  if [ "${#DCCSH_WORKERS}" -eq 0 ] && [ "$requested_local_jobs" -eq 0 ]; then
+    echo "ERROR: Refusing to build!" >&2
+    echo "There are NO remote workers available, and there is not enough" \
+      "memory for local compilation." >&2
+    exit 3
+  fi
 
 
   # Clean up the environment of the executed main command by unsetting variables
@@ -404,5 +480,6 @@ function distcc_driver {
   env \
     --unset="DISTCC_AUTO_HOSTS" \
     --unset="DISTCC_AUTO_COMPILER_MEMORY" \
+    --unset="DISTCC_AUTO_EARLY_LOCAL_JOBS" \
     "$@"
 }
