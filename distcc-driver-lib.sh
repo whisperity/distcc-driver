@@ -383,7 +383,7 @@ function scale_worker_job_counts {
 
   if [ "$requested_per_job_mem" -le 0 ]; then
     # Return value.
-    echo "$2"
+    echo "$@"
     return
   fi
 
@@ -524,7 +524,7 @@ function drive_distcc {
   # the command to execute.
 
   local build_system_jobs="$1"
-  local distcc_hosts="$2"
+  local distcc_hosts_str="$2"
   shift 2
 
   debug "Executing command: $*"
@@ -537,7 +537,7 @@ function drive_distcc {
     --unset="DISTCC_AUTO_FALLBACK_LOCAL_JOBS" \
     --unset="DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS" \
     CCACHE_PREFIX="distcc" \
-    DISTCC_HOSTS="$distcc_hosts" \
+    DISTCC_HOSTS="$distcc_hosts_str" \
       "$@" \
         -j "$build_system_jobs"
 }
