@@ -187,15 +187,6 @@ function print_configuration {
 }
 
 
-function unset_internal_env_vars {
-  # Cleans up the environment of the executing shell by unsetting variables that
-  # are otherwise globaly setl by this script for some cross-function purpose,
-  # but not needed for the executing process.
-
-  : # Noop.
-}
-
-
 # Via http://stackoverflow.com/a/36760050.
 IPv4_REGEX='((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.){3}(25[0-5]|(2[0-4]|1\d|[1-9]|)\d)'
 
@@ -388,12 +379,13 @@ function scale_worker_job_counts {
   # capacities and the expected per-job memory use value passed under $1.
 
   local requested_per_job_mem="$1"
+  shift 1
+
   if [ "$requested_per_job_mem" -le 0 ]; then
     # Return value.
     echo "$2"
     return
   fi
-  shift 1
 
   local workers=()
 
@@ -485,6 +477,69 @@ function scale_local_job_count {
 
   # Return value.
   echo "$local_jobs"
+}
+
+
+function assemble_distcc_hosts {
+  # Assembles the DISTCC_HOSTS environment variable, to be passed to distcc(1),
+  # based on the local job slot count ($1), the local preprocessor count ($2),
+  # and the worker specifications in the remaining variadic parameter ($@).
+  #
+  # Returns a single string that should be the environment variable.
+
+  local distcc_hosts=()
+
+  local localhost_compilers="$1"
+  local localhost_preprocessors="$2"
+  shift 2
+
+  if [ "$localhost_compilers" -gt 0 ]; then
+    distcc_hosts+=("localhost/$localhost_compilers"
+      "--localslots=$localhost_compilers")
+  fi
+  if [ "$localhost_preprocessors" -gt 0 ]; then
+    distcc_hosts+=("--localslots_cpp=$localhost_preprocessors")
+  fi
+
+  for worker_specification in "$@"; do
+    local worker_specification_fields
+    IFS='/' read -ra worker_specification_fields <<< "$worker_specification"
+
+    local hostname="${worker_specification_fields[1]}"
+    local job_port="${worker_specification_fields[2]}"
+    local thread_count="${worker_specification_fields[4]}"
+
+    distcc_hosts+=("$hostname:$job_port/$thread_count,lzo")
+  done
+
+  # Return value.
+  echo "${distcc_hosts[@]}"
+}
+
+
+function drive_distcc {
+  # Actually executes the user-specified command with passing the job count $1
+  # in a command-line parameter and running with $2 set as the 'DISTCC_HOSTS'
+  # environment variable. The rest of the variadic input parameters ($@) specify
+  # the command to execute.
+
+  local build_system_jobs="$1"
+  local distcc_hosts="$2"
+  shift 2
+
+  debug "Executing command: $*"
+  # Clean up the environment of the executed main command by unsetting variables
+  # that were used as configuration inputs to the driver script.
+  env \
+    --unset="DISTCC_AUTO_HOSTS" \
+    --unset="DISTCC_AUTO_COMPILER_MEMORY" \
+    --unset="DISTCC_AUTO_EARLY_LOCAL_JOBS" \
+    --unset="DISTCC_AUTO_FALLBACK_LOCAL_JOBS" \
+    --unset="DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS" \
+    CCACHE_PREFIX="distcc" \
+    DISTCC_HOSTS="$distcc_hosts" \
+      "$@" \
+        -j "$build_system_jobs"
 }
 
 
@@ -599,16 +654,15 @@ function distcc_driver {
   fi
 
 
-  # Clean up the environment of the executed main command by unsetting variables
-  # that were used as configuration inputs to the driver script.
-  #
-  # Then fire away the user's requested command.
-  unset_internal_env_vars
-  env \
-    --unset="DISTCC_AUTO_HOSTS" \
-    --unset="DISTCC_AUTO_COMPILER_MEMORY" \
-    --unset="DISTCC_AUTO_EARLY_LOCAL_JOBS" \
-    --unset="DISTCC_AUTO_FALLBACK_LOCAL_JOBS" \
-    --unset="DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS" \
-    "$@"
+  # Assemble environment and command to execute.
+  local distcc_hosts
+  distcc_hosts="$(assemble_distcc_hosts \
+    "$requested_local_jobs" \
+    "$preprocessor_saturation_jobs" \
+    "${workers[@]}")"
+  debug "Using DISTCC_HOSTS: ${distcc_hosts[*]}"
+
+
+  # Fire away the user's requested command.
+  drive_distcc "$total_job_count" "${distcc_hosts[@]}" "$@"
 }
