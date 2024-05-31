@@ -1,7 +1,7 @@
 Smart [DistCC](http://distcc.org) driver
 ========================================
 
-`distcc.sh` &emdash; DistCC remote auto-job script
+`distcc.sh` &mdash; DistCC remote auto-job script
 
 
 Summary
