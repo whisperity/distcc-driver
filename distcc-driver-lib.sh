@@ -64,19 +64,22 @@ function _check_command {
   if ! command -v "$1" >/dev/null; then
     log "FATAL" "System utility '""$1""' is not installed!"
     _DCCSH_HAS_MISSING_TOOLS=1
+    return 1
   fi
+
+  return 0
 }
 
-_check_command awk
-_check_command curl
-_check_command free
-_check_command grep
-_check_command nproc
-_check_command sed
+function check_commands {
+  _check_command awk
+  _check_command curl
+  _check_command free
+  _check_command grep
+  _check_command nproc
+  _check_command sed
 
-if [ "$_DCCSH_HAS_MISSING_TOOLS" -ne 0 ]; then
-  exit 96
-fi
+  return "$_DCCSH_HAS_MISSING_TOOLS"
+}
 
 
 # Set up configuration variables that are holding the default value for the
@@ -462,6 +465,11 @@ function distcc_driver {
   # The main entry point to the implementation of the job deployment client.
 
 
+  # Startup, configuration and environment checking.
+  if ! check_commands; then
+    exit 96
+  fi
+
   debug "Invoking command line is: $*"
   print_configuration
 
@@ -471,11 +479,13 @@ function distcc_driver {
   fi
 
 
+  # Parse user configuration of hosts and query worker capabilities.
   local workers
   IFS=';' read -ra workers \
     <<< "$(get_raw_worker_specifications "${DISTCC_AUTO_HOSTS:=}")"
 
 
+  # Scale workers' known specification to available capacity, if needed.
   local requested_per_job_mem
   if [ "$DISTCC_AUTO_COMPILER_MEMORY" == "0" ]; then
     debug "DISTCC_AUTO_COMPILER_MEMORY == \"0\": Skip scaling workers"
@@ -492,6 +502,7 @@ function distcc_driver {
   done
 
 
+  # Decide the number of parallel jobs to run completely locally.
   local requested_local_jobs
   if [ "$num_remotes" -ne 0 ]; then
     requested_local_jobs="${DISTCC_AUTO_EARLY_LOCAL_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS"}"
@@ -518,6 +529,7 @@ function distcc_driver {
   fi
 
 
+  # Calculate the total width of parallelism to execute.
   if [ "$num_remotes" -eq 0 ] && [ "$requested_local_jobs" -eq 0 ]; then
     log "FATAL" "Refusing to build!"
     log "FATAL" "There are NO remote workers available, and local execution" \
@@ -551,6 +563,8 @@ function distcc_driver {
 
   # Clean up the environment of the executed main command by unsetting variables
   # that were used as configuration inputs to the driver script.
+  #
+  # Then fire away the user's requested command.
   unset_internal_env_vars
   env \
     --unset="DISTCC_AUTO_HOSTS" \
