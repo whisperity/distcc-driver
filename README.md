@@ -9,8 +9,10 @@ Summary
 
 Automatically distribute a C/C++ compilation over a DistCC-based cluster with job-count load balancing.
 
-    export DISTCC_AUTO_HOSTS="worker-1 worker-2 worker-3"
-    source distcc.sh; distcc_build make target1 target2 ...
+```bash
+export DISTCC_AUTO_HOSTS="worker-1 worker-2 worker-3"
+source distcc.sh; distcc_build make target1 target2 ...
+```
 
 
 Description
@@ -22,11 +24,15 @@ However, instead of requiring the user to manually configure `DISTCC_HOSTS`, whi
 It is expected to call this script by prefixing a build command with the wrapper function's name, and specifying the hosts where _distccd(1)_ servers are listening.
 The called build tool should allow receiving a `-j` parameter, followed by a number.
 
-    DISTCC_AUTO_HOSTS="server-1 server-2" distcc_build make foo
+```bash
+DISTCC_AUTO_HOSTS="server-1 server-2" distcc_build make foo
+```
 
 In this case, the real call under the hood will expand to something appropriate, such as:
 
-    DISTCC_HOSTS="localhost/8 server-1/16,lzo server-2/8,lzo" make foo -j 32
+```bash
+DISTCC_HOSTS="localhost/8 server-1/16,lzo server-2/8,lzo" make foo -j 32
+```
 
 
 Configuration environment variables
