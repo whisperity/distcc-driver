@@ -46,67 +46,88 @@
 #
 # CONFIGURATION ENVIRONMENT VARIABLES
 #
-#     DISTCC_HOSTS              The original, official remote worker
-#                               "HOST SPECIFICATION" used by DistCC.
-#                               This variable is **IGNORED** and **OVERWRITTEN**
-#                               by this script!
+#     DISTCC_HOSTS
 #
-#     DISTCC_AUTO_HOSTS         The list of hosts to check and balance the
-#                               number of running compilations against.
-#                               See the exact format below, under
-#                               'HOST SPECIFICATION'.
-#                               Compared to DISTCC_HOSTS (**NOT** used by this
-#                               script!), the number of available job slots on
-#                               the server need not be specified.
+#       The original, official remote worker "HOST SPECIFICATION" used by
+#       DistCC.
+#       This variable is **IGNORED** and **OVERWRITTEN** this script!
 #
-#     DISTCC_AUTO_EARLY_LOCAL_JOBS  The number of jobs to run in parallel
-#                                   **WITHOUT** distributing them to a worker,
-#                                   entirely on the local machine.
-#                                   The local invocation of the compilers will
-#                                   take priority over any remote compilation,
-#                                   which enables not loading the network with
-#                                   jobs if only a few actual compilations would
-#                                   be executed by the build system.
+#     DISTCC_AUTO_HOSTS
 #
-#                                   It is recommended to set this to a small
-#                                   value, e.g., "2" or "4", depending on
-#                                   project-specific conditions.
+#       The list of hosts to check and balance the number of running
+#       compilations against.
+#       See the exact format below, under 'HOST SPECIFICATION'.
+#       Compared to `DISTCC_HOSTS` (**NOT** used by this script!), the number
+#       of available job slots on the server need not be specified.
 #
-#                                   Defaults to "0", which results in **NO**
-#                                   local compilations (except for the fallback
-#                                   or failed-job-retry as employed by
-#                                   distcc(1)) in case at least one remote
-#                                   server is available.
+#     DISTCC_AUTO_EARLY_LOCAL_JOBS
 #
-#     DISTCC_AUTO_FALLBACK_LOCAL_JOBS  The number of jobs to run in parallel
-#                                      locally (without distributing them to a
-#                                      worker) in case **NO REMOTE WORKERS** are
-#                                      available at all.
+#       The number of jobs to run in parallel **WITHOUT** distributing them to
+#       a worker, entirely on the local machine.
+#       The local invocation of the compilers will take priority over any remote
+#       compilation, which enables not loading the network with jobs if only a
+#       few actual compilations would be executed by the build system.
 #
-#                                      Set to "0" to completely **DISABLE**
-#                                      local-only builds and trigger an error
-#                                      exit instead.
+#       It is recommended to set this to a small value, e.g., "2" or "4",
+#       depending on project-specific conditions.
 #
-#                                      Defaults to "$(nproc)", the number of CPU
-#                                      threads available on the machine.
+#       Defaults to "0", which results in **NO** local compilations (except for
+#       the fallback or failed-job-retry as employed by distcc(1)) in case
+#       **AT LEAST ONE** remote server is available.
 #
-#     DISTCC_AUTO_COMPILER_MEMORY   The amount of memory **in MiB** that is
-#                                   expected to be consumed by a **single**
-#                                   compiler process, on average.
-#                                   This value is used to scale the number of
-#                                   jobs dispatched to a worker, if such
-#                                   calculation is applicable.
-#                                   It is usually not necessary to tweak this
-#                                   value prior to encountering performance
-#                                   issues.
+#     DISTCC_AUTO_FALLBACK_LOCAL_JOBS
 #
-#                                   Defaults to a reasonably large value of
-#                                   "1024", corresponding to 1 GiB of memory.
-#                                   (This value was empirically verified to be
-#                                   sufficient during the compilation of a
-#                                   large project such as LLVM.)
+#       The number of jobs to run in parallel locally (without distributing
+#       them to a worker) in case **NO REMOTE WORKERS** are available at all.
 #
-#                                   Set to "0" to disable the automatic scaling.
+#       Set to "0" to completely **DISABLE** local-only builds and trigger an
+#       error exit instead.
+#
+#       Defaults to "$(nproc)", the number of CPU threads available on
+#       the machine.
+#
+#     DISTCC_AUTO_COMPILER_MEMORY
+#
+#       The amount of memory **in MiB** that is expected to be consumed by a
+#       **single** compiler process, on average.
+#       This value is used to scale the number of jobs dispatched to a worker,
+#       if such calculation is applicable.
+#       It is usually not necessary to tweak this value prior to encountering
+#       performance issues.
+#
+#       Defaults to a reasonably large value of "1024", corresponding to 1 GiB
+#       of memory.
+#       (This value was empirically verified to be sufficient during the
+#       compilation of a large project such as LLVM.)
+#
+#       Set to "0" to disable the automatic scaling.
+#
+#     DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS
+#
+#       In case there is **AT LEAST ONE** remote worker available, add the
+#       specified number of additional jobs that can be spawned in parallel by
+#       the build system.
+#       These jobs will run the compilation up to the successful preprocessing
+#       phase, at which point DistCC will block them until a local worker thread
+#       (see DISTCC_AUTO_EARLY_LOCAL_JOBS) is available to compile them, or a
+#       remote machine returns a job and can be sent the next job.
+#
+#       This setting allows the local computer to keep a constant supply of
+#       pending jobs ready to be dispatched, instead of waiting for an actual
+#       compilation (local or remote) to finish before starting the preparation
+#       of the next job.
+#
+#       Set to "0" to completely **DISABLE** local preprocessor saturation.
+#       As preprocessing is cheap in terms of CPU use and has a barely
+#       noticeable overhead on memory, doing so is **NOT RECOMMENDED**, unless
+#       the local machine is known to be very weak.
+#
+#       It is recommended to keep this feature enabled if the local machine
+#       stores souce code on a slow-to-access device (e.g., HDD or NFS).
+#
+#       Defaults to "$(nproc)", the number of CPU threads available on
+#       the machine.
+#
 #
 #   Additional implementation-detail configuration variables exist in
 #   'distcc-driver-lib.sh', which need not be altered for normal operation.
@@ -168,16 +189,18 @@
 #   In addition, the main script may generate, prior to the execution of the
 #   build tool, the following exit codes for error conditions:
 #
-#      96                       Indicates an issue with the configuration of
-#                               the execution environment, such as the emptiness
-#                               of a mandatory configuration variable, or the
-#                               lack of required system tools preventing normal
-#                               function.
+#      96
 #
-#      97                       There is not enough system memory (RAM)
-#                               available on the local computer to run the
-#                               requested number of local compilations, and no
-#                               remote workers were available.
+#          Indicates an issue with the configuration of the execution
+#          environment, such as the emptiness of a mandatory configuration
+#          variable, or the lack of required system tools preventing normal
+#          function.
+#
+#      97
+#
+#          There is not enough system memory (RAM) available on the local
+#          computer to run the requested number of local compilations, and no
+#          remote workers were available.
 #
 #
 # AUTHOR

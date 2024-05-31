@@ -89,6 +89,7 @@ _DCCSH_DEFAULT_STATS_PORT=3633
 _DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY=1024
 _DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS=0
 _DCCSH_DEFAULT_DISTCC_AUTO_FALLBACK_LOCAL_JOBS="$(nproc)"
+_DCCSH_DEFAULT_DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS="$(nproc)"
 
 
 function debug {
@@ -153,10 +154,36 @@ function print_configuration {
     return
   fi
 
-  debug "DISTCC_AUTO_HOSTS:               $DISTCC_AUTO_HOSTS"
-  debug "DISTCC_AUTO_COMPILER_MEMORY:     $DISTCC_AUTO_COMPILER_MEMORY"
-  debug "DISTCC_AUTO_EARLY_LOCAL_JOBS:    $DISTCC_AUTO_EARLY_LOCAL_JOBS"
-  debug "DISTCC_AUTO_FALLBACK_LOCAL_JOBS: $DISTCC_AUTO_FALLBACK_LOCAL_JOBS"
+  debug "DISTCC_AUTO_HOSTS:                       " \
+    "$DISTCC_AUTO_HOSTS"
+
+  debug "DISTCC_AUTO_COMPILER_MEMORY:             " \
+    "$DISTCC_AUTO_COMPILER_MEMORY"
+  if [ -z "$DISTCC_AUTO_COMPILER_MEMORY" ]; then
+    debug "    (default):                           " \
+      "$_DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY"
+  fi
+
+  debug "DISTCC_AUTO_EARLY_LOCAL_JOBS:            " \
+    "$DISTCC_AUTO_EARLY_LOCAL_JOBS"
+  if [ -z "$DISTCC_AUTO_EARLY_LOCAL_JOBS" ]; then
+    debug "    (default):                           " \
+      "$_DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS"
+  fi
+
+  debug "DISTCC_AUTO_FALLBACK_LOCAL_JOBS:         " \
+    "$DISTCC_AUTO_FALLBACK_LOCAL_JOBS"
+  if [ -z "$DISTCC_AUTO_FALLBACK_LOCAL_JOBS" ]; then
+    debug "    (default):                           " \
+      "$_DCCSH_DEFAULT_DISTCC_AUTO_FALLBACK_LOCAL_JOBS"
+  fi
+
+  debug "DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS:" \
+    "$DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS"
+  if [ -z "$DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS" ]; then
+    debug "    (default):                           " \
+      "$_DCCSH_DEFAULT_DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS"
+  fi
 }
 
 
@@ -538,6 +565,7 @@ function distcc_driver {
   fi
 
   local num_remote_jobs=0
+  local preprocessor_saturation_jobs=0
   local total_job_count=0
   if [ "$num_remotes" -ne 0 ]; then
     num_remote_jobs="$(sum_worker_job_counts "${workers[@]}")"
@@ -552,9 +580,19 @@ function distcc_driver {
     exit 97
   fi
 
+  local preprocessor_saturation_jobs="${DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS"}"
+  if [ "$preprocessor_saturation_jobs" -eq 0 ]; then
+    debug "Preprocessor saturation job count == 0: Skip setting up"
+  else
+    total_job_count="$(( num_remote_jobs + preprocessor_saturation_jobs ))"
+  fi
+
   log "INFO" "Building '-j $total_job_count':"
   if [ "$requested_local_jobs" -gt 0 ]; then
     log "INFO" "  - $requested_local_jobs local compilations"
+  fi
+  if [ "$preprocessor_saturation_jobs" -gt 0 ]; then
+    log "INFO" "  - $preprocessor_saturation_jobs preprocessor saturation"
   fi
   if [ "$num_remote_jobs" -gt 0 ]; then
     log "INFO" "  - $num_remote_jobs remote jobs (over $num_remotes hosts)"
@@ -571,5 +609,6 @@ function distcc_driver {
     --unset="DISTCC_AUTO_COMPILER_MEMORY" \
     --unset="DISTCC_AUTO_EARLY_LOCAL_JOBS" \
     --unset="DISTCC_AUTO_FALLBACK_LOCAL_JOBS" \
+    --unset="DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS" \
     "$@"
 }

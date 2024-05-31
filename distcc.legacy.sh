@@ -117,12 +117,6 @@ function _dccsh_append_localhost {
     fi
 }
 
-# Appends additional jobs to the total allowed job count for preprocessing.
-function _dccsh_append_preprocess_jobs {
-    _dccsh_debug "Allowing $(nproc) extra jobs for preprocessing..."
-    DCCSH_TOTAL_JOBS=$(($DCCSH_TOTAL_JOBS + $(nproc)))
-}
-
 function _dccsh_cleanup_vars {
     DCCSH_HOSTS=""
     DCCSH_LOCAL_JOBS=0
@@ -145,7 +139,6 @@ function distcc_build {
     _dccsh_parse_distcc_ports
 
     _dccsh_append_localhost
-    _dccsh_append_preprocess_jobs
 
     _dccsh_run_distcc "$DCCSH_HOSTS" $* -j "$DCCSH_TOTAL_JOBS"
     local R=$?
