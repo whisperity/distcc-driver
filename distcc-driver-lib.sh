@@ -31,6 +31,15 @@
 ################################################################################
 
 
+function log {
+  # Emits a log message to the standard error.
+  local severity="$1"
+  shift 1
+
+  echo "distcc-driver - $severity: $*" >&2
+}
+
+
 # This code should not be executed as a top-level script, because it only
 # defines functions to be called by a wrapper script, see 'distcc.sh'.
 case ${0##*/} in
@@ -40,19 +49,11 @@ case ${0##*/} in
     # Allow `source` from the unit testing library.
     ;;
   *)
-    echo "ERROR: The library script '${BASH_SOURCE[0]}' should not be" \
-      "executed as a main script!" >&2
+    log "FATAL" "The library script '${BASH_SOURCE[0]}' should not be" \
+      "executed as a main script!"
     exit 96
     ;;
 esac
-
-
-# Set up configuration variables that are holding the default value for the
-# user-configurable options.
-_DCCSH_DEFAULT_DISTCC_PORT=3632
-_DCCSH_DEFAULT_STATS_PORT=3633
-_DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY=1024
-_DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS=0
 
 
 _DCCSH_HAS_MISSING_TOOLS=0
@@ -61,8 +62,7 @@ function _check_command {
   # If these tools are not available, prevent loading the script.
 
   if ! command -v "$1" >/dev/null; then
-    echo "ERROR: System utility '""$1""' is not installed!" \
-      "This script can not run." >&2
+    log "FATAL" "System utility '""$1""' is not installed!"
     _DCCSH_HAS_MISSING_TOOLS=1
   fi
 }
@@ -71,11 +71,21 @@ _check_command awk
 _check_command curl
 _check_command free
 _check_command grep
+_check_command nproc
 _check_command sed
 
 if [ "$_DCCSH_HAS_MISSING_TOOLS" -ne 0 ]; then
   exit 96
 fi
+
+
+# Set up configuration variables that are holding the default value for the
+# user-configurable options.
+_DCCSH_DEFAULT_DISTCC_PORT=3632
+_DCCSH_DEFAULT_STATS_PORT=3633
+_DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY=1024
+_DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS=0
+_DCCSH_DEFAULT_DISTCC_AUTO_FALLBACK_LOCAL_JOBS="$(nproc)"
 
 
 function debug {
@@ -124,7 +134,7 @@ function array {
   fi
 
   if [[ "$first" == *"$delimiter"* || "$*" == *"$delimiter"* ]]; then
-    echo "array: ERROR: Requested delimiter '""$delimiter""' found in" \
+    echo "array() - ERROR: Requested delimiter '""$delimiter""' found in" \
       "input elements: $first $*" >&2
     return 1
   fi
@@ -140,9 +150,10 @@ function print_configuration {
     return
   fi
 
-  debug "DISTCC_AUTO_HOSTS:            $DISTCC_AUTO_HOSTS"
-  debug "DISTCC_AUTO_COMPILER_MEMORY:  $DISTCC_AUTO_COMPILER_MEMORY"
-  debug "DISTCC_AUTO_EARLY_LOCAL_JOBS: $DISTCC_AUTO_EARLY_LOCAL_JOBS"
+  debug "DISTCC_AUTO_HOSTS:               $DISTCC_AUTO_HOSTS"
+  debug "DISTCC_AUTO_COMPILER_MEMORY:     $DISTCC_AUTO_COMPILER_MEMORY"
+  debug "DISTCC_AUTO_EARLY_LOCAL_JOBS:    $DISTCC_AUTO_EARLY_LOCAL_JOBS"
+  debug "DISTCC_AUTO_FALLBACK_LOCAL_JOBS: $DISTCC_AUTO_FALLBACK_LOCAL_JOBS"
 }
 
 
@@ -164,12 +175,13 @@ IPv4_REGEX='((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.){3}(25[0-5]|(2[0-4]|1\d|[1-9]|)\d
 IPv6_REGEX='(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))'
 
 function parse_distcc_auto_hosts {
-  # Parses the contents of the first argument $1 according to the
+  # Parses the contents of the first argument ($1) according to the
   # DISTCC_AUTO_HOSTS specification syntax.
   # The output is the parsed hosts transformed down to an internal syntax,
-  # in the following format: an array of "PROTOCOL/HOST/PORT/STAT_PORT" entries.
+  # in the following format: a semicolon (';') separated array of
+  # "PROTOCOL/HOST/PORT/STAT_PORT" entries.
 
-  local DCCSH_HOSTS=()
+  local hosts=()
 
   for hostspec in $1; do
     local original_hostspec="$hostspec"
@@ -228,17 +240,16 @@ function parse_distcc_auto_hosts {
 
     # After parsing, the hostspec should have emptied.
     if [ -n "$hostspec" ]; then
-      echo "WARNING: Parsing of malformed DISTCC_AUTO_HOSTS entry" \
-        "\"$original_hostspec\" did not conclude cleanly, and \"$hostspec\"" \
-        "was ignored!" >&2
+      log "WARNING" "Parsing of malformed DISTCC_AUTO_HOSTS entry" \
+        "\"$original_hostspec\" did not conclude cleanly, and" \
+        "\"$hostspec\" was ignored!"
     fi
 
-    DCCSH_HOSTS+=("$(array '/' \
-      "$protocol" "$hostname" "$job_port" "$stat_port")")
+    hosts+=("$(array '/' "$protocol" "$hostname" "$job_port" "$stat_port")")
   done
 
   # Return value.
-  echo "${DCCSH_HOSTS[@]}"
+  array ';' "${hosts[@]}"
 }
 
 
@@ -247,10 +258,11 @@ function fetch_worker_capacity {
   # extract the server's capacity and statistical details from it.
   # Returns the worker capacity information: "THREAD_COUNT/LOAD_AVG/FREE_MEM".
 
-  debug "Querying host capacity: $worker_connection ..."
+  local hostspec="$1"
+  debug "Querying host capacity: $hostspec ..."
 
   local worker_connection_fields
-  IFS='/' read -ra worker_connection_fields <<<"$1"
+  IFS='/' read -ra worker_connection_fields <<< "$hostspec"
   local hostname="${worker_connection_fields[1]}"
   local stat_port="${worker_connection_fields[3]}"
 
@@ -262,11 +274,10 @@ function fetch_worker_capacity {
     --show-error)"
   # shellcheck disable=SC2181
   if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to query capacity of host" \
+    log "ERROR" "Failed to query capacity of host" \
       "\"${worker_connection_fields[0]}://$hostname:${worker_connection_fields[2]}\"!" \
       "Likely the host is unavailable." \
-      "See curl error message above for details!" \
-      >&2
+      "See curl error message above for details!"
     return 1
   fi
   # debug -e "Raw DistCC --stats response:\n${stat_response}"
@@ -298,13 +309,14 @@ function fetch_worker_capacity {
 
 function fetch_worker_capacities {
   # Download and assemble the worker capacities for all the hosts specified in
-  # $1.
+  # the variadic parameter list $@.
   # Returns the worker host specifications concatenated with the capacity
-  # information for each array element.
+  # information for each array element, in the same semicolon (';') separated
+  # format as with parse_distcc_auto_hosts.
 
-  local DCCSH_HOSTS_WITH_CAPS=()
+  local workers=()
 
-  for worker_connection in $1; do
+  for worker_connection in "$@"; do
     local worker_capacity
     worker_capacity="$(fetch_worker_capacity "$worker_connection")"
     # shellcheck disable=SC2181
@@ -313,18 +325,37 @@ function fetch_worker_capacities {
       continue
     fi
 
-    DCCSH_HOSTS_WITH_CAPS+=("$worker_connection"/"$worker_capacity")
+    workers+=("$worker_connection"/"$worker_capacity")
   done
 
   # Return value.
-  echo "${DCCSH_HOSTS_WITH_CAPS[@]}"
+  array ';' "${workers[@]}"
+}
+
+
+function get_raw_worker_specifications {
+  # Parses the first and only argument ($1) according to the DISTCC_AUTO_HOSTS
+  # config variable's "HOST SPECIFICATION" syntax, obtaining a list of remote
+  # worker hosts.
+  # Then queries the hosts to obtain the internal "WORKER SPECIFICATION", which
+  # is the "HOST SPECIFICATION" fields extended with statistical and
+  # performance information.
+  # Returns the remote workers in a semicolon (';')-separated array of
+  # "PROTOCOL/HOST/PORT/STAT_PORT/THREAD_COUNT/LOAD_AVG/FREE_MEM"
+  # entries.
+
+  local parsed_hosts
+  IFS=';' read -ra parsed_hosts <<< "$(parse_distcc_auto_hosts "$1")"
+
+  # Return value.
+  fetch_worker_capacities "${parsed_hosts[@]}"
 }
 
 
 function scale_worker_job_counts {
   # Calculates how many jobs should be dispatched (at maximum) to each already
-  # queried worker in $2, based on the workers' capacities and the expected
-  # per-job memory use value passed under $1.
+  # queried worker in $@ (the variadic input argument), based on the workers'
+  # capacities and the expected per-job memory use value passed under $1.
 
   local requested_per_job_mem="$1"
   if [ "$requested_per_job_mem" -le 0 ]; then
@@ -332,19 +363,21 @@ function scale_worker_job_counts {
     echo "$2"
     return
   fi
+  shift 1
 
-  local DCCSH_WORKERS=()
+  local workers=()
 
-  for worker_specification in $2; do
+  for worker_specification in "$@"; do
     local worker_specification_fields
-    IFS='/' read -ra worker_specification_fields <<<"$worker_specification"
+    IFS='/' read -ra worker_specification_fields <<< "$worker_specification"
 
     local available_memory="${worker_specification_fields[6]}"
     if [ "$available_memory" == "-1" ]; then
       # If no memory information is available about the worker, assume that it
       # will be able to handle the number of jobs it exposes that it could
-      # handle, and do not do any scaling.
-      DCCSH_WORKERS+=("$worker_specification")
+      # handle, and do not do any scaling, as we have no way of executing the
+      # scaling.
+      workers+=("$worker_specification")
       continue
     fi
 
@@ -365,11 +398,30 @@ function scale_worker_job_counts {
       worker_specification_fields[4]="$scaled_thread_count"
     fi
 
-    DCCSH_WORKERS+=("$(array '/' "${worker_specification_fields[@]}")")
+    workers+=("$(array '/' "${worker_specification_fields[@]}")")
   done
 
   # Return value.
-  echo "${DCCSH_WORKERS[@]}"
+  array ';' "${workers[@]}"
+}
+
+function sum_worker_job_counts {
+  # Calculates the number of jobs to be dispatched to workers in total, based
+  # on the worker specification provided under the variadic input $@.
+  # Returns a single integer number.
+
+  local remote_job_count=0
+
+  for worker_specification in "$@"; do
+    local worker_specification_fields
+    IFS='/' read -ra worker_specification_fields <<< "$worker_specification"
+
+    local worker_job_count="${worker_specification_fields[4]}"
+    remote_job_count="$(( remote_job_count + worker_job_count ))"
+  done
+
+  # Return value.
+  echo "$remote_job_count"
 }
 
 function scale_local_job_count {
@@ -414,41 +466,41 @@ function distcc_driver {
   print_configuration
 
   if [ -z "$DISTCC_AUTO_HOSTS" ]; then
-    echo "ERROR: 'distcc_driver' called without setting" \
-      "'DISTCC_AUTO_HOSTS'!" >&2
+    log "FATAL" "'distcc_driver' called without setting 'DISTCC_AUTO_HOSTS'!"
     exit 96
   fi
 
 
-  local DCCSH_HOSTS=("$(parse_distcc_auto_hosts "${DISTCC_AUTO_HOSTS:=}")")
-  local DCCSH_WORKERS=("$(fetch_worker_capacities "${DCCSH_HOSTS[@]}")")
+  local workers
+  IFS=';' read -ra workers \
+    <<< "$(get_raw_worker_specifications "${DISTCC_AUTO_HOSTS:=}")"
+
 
   local requested_per_job_mem
   if [ "$DISTCC_AUTO_COMPILER_MEMORY" == "0" ]; then
     debug "DISTCC_AUTO_COMPILER_MEMORY == \"0\": Skip scaling workers"
   else
     requested_per_job_mem="${DISTCC_AUTO_COMPILER_MEMORY:-"$_DCCSH_DEFAULT_DISTCC_AUTO_COMPILER_MEMORY"}"
-    DCCSH_WORKERS=("$(scale_worker_job_counts \
-      "$requested_per_job_mem" \
-      "${DCCSH_WORKERS[@]}")")
+    IFS=';' read -ra workers \
+      <<< "$(scale_worker_job_counts "$requested_per_job_mem" "${workers[@]}")"
   fi
 
+  local num_remotes="${#workers[@]}"
   debug "Effective remote specification:"
-  # shellcheck disable=SC2068
-  for worker_specification in ${DCCSH_WORKERS[@]}; do
+  for worker_specification in "${workers[@]}"; do
     debug "  - $worker_specification"
   done
 
 
   local requested_local_jobs
-  if [ "${#DCCSH_WORKERS}" -ne 0 ]; then
+  if [ "$num_remotes" -ne 0 ]; then
     requested_local_jobs="${DISTCC_AUTO_EARLY_LOCAL_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS"}"
     debug "Requesting $requested_local_jobs local jobs ..." \
       "(from DISTCC_AUTO_EARLY_LOCAL_JOBS)"
   else
-    # FIXME: (Re-)implement falling back to $(nproc) jobs in a configurable way
-    # if no remotes exist.
-    requested_local_jobs=$(nproc)
+    requested_local_jobs="${DISTCC_AUTO_FALLBACK_LOCAL_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_FALLBACK_LOCAL_JOBS"}"
+    debug "Requesting $requested_local_jobs local jobs ... " \
+      "(from DISTCC_AUTO_FALLBACK_LOCAL_JOBS)"
   fi
 
   if [ "$requested_local_jobs" -eq 0 ]; then
@@ -466,11 +518,34 @@ function distcc_driver {
   fi
 
 
-  if [ "${#DCCSH_WORKERS}" -eq 0 ] && [ "$requested_local_jobs" -eq 0 ]; then
-    echo "ERROR: Refusing to build!" >&2
-    echo "There are NO remote workers available, and there is not enough" \
-      "memory for local compilation." >&2
+  if [ "$num_remotes" -eq 0 ] && [ "$requested_local_jobs" -eq 0 ]; then
+    log "FATAL" "Refusing to build!"
+    log "FATAL" "There are NO remote workers available, and local execution" \
+      "was disabled either on request, or due to lack of available memory."
     exit 97
+  fi
+
+  local num_remote_jobs=0
+  local total_job_count=0
+  if [ "$num_remotes" -ne 0 ]; then
+    num_remote_jobs="$(sum_worker_job_counts "${workers[@]}")"
+    total_job_count="$num_remote_jobs"
+  else
+    total_job_count="$requested_local_jobs"
+  fi
+
+  if [ "$total_job_count" -eq 0 ]; then
+    log "FATAL (ASSERT) @ $LINENO" \
+      "Total job count was $total_job_count but an earlier exit was not taken."
+    exit 97
+  fi
+
+  log "INFO" "Building '-j $total_job_count':"
+  if [ "$requested_local_jobs" -gt 0 ]; then
+    log "INFO" "  - $requested_local_jobs local compilations"
+  fi
+  if [ "$num_remote_jobs" -gt 0 ]; then
+    log "INFO" "  - $num_remote_jobs remote jobs (over $num_remotes hosts)"
   fi
 
 
@@ -481,5 +556,6 @@ function distcc_driver {
     --unset="DISTCC_AUTO_HOSTS" \
     --unset="DISTCC_AUTO_COMPILER_MEMORY" \
     --unset="DISTCC_AUTO_EARLY_LOCAL_JOBS" \
+    --unset="DISTCC_AUTO_FALLBACK_LOCAL_JOBS" \
     "$@"
 }

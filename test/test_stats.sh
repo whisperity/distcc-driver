@@ -69,6 +69,8 @@ test_fetch_worker_capacities() {
   _serve_file_http "inputs/test_stats/8_threads.txt" "$port2"
 
   assert_equals \
-    "tcp/localhost/1/$port1/1/7.5/-1 tcp/localhost/2/$port2/8/2/-1" \
-    "$(fetch_worker_capacities "tcp/localhost/1/$port1 tcp/localhost/2/$port2")"
+    "tcp/localhost/1/$port1/1/7.5/-1;tcp/localhost/2/$port2/8/2/-1" \
+    "$(fetch_worker_capacities \
+      "tcp/localhost/1/$port1" \
+      "tcp/localhost/2/$port2")"
 }

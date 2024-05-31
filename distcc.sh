@@ -59,9 +59,9 @@
 #                               script!), the number of available job slots on
 #                               the server need not be specified.
 #
-#     DISTCC_AUTO_EARLY_LOCAL_JOBS  The number of jobs to handle **WITHOUT**
-#                                   distributing them to a worker, entirely on
-#                                   the local machine.
+#     DISTCC_AUTO_EARLY_LOCAL_JOBS  The number of jobs to run in parallel
+#                                   **WITHOUT** distributing them to a worker,
+#                                   entirely on the local machine.
 #                                   The local invocation of the compilers will
 #                                   take priority over any remote compilation,
 #                                   which enables not loading the network with
@@ -77,6 +77,18 @@
 #                                   or failed-job-retry as employed by
 #                                   distcc(1)) in case at least one remote
 #                                   server is available.
+#
+#     DISTCC_AUTO_FALLBACK_LOCAL_JOBS  The number of jobs to run in parallel
+#                                      locally (without distributing them to a
+#                                      worker) in case **NO REMOTE WORKERS** are
+#                                      available at all.
+#
+#                                      Set to "0" to completely **DISABLE**
+#                                      local-only builds and trigger an error
+#                                      exit instead.
+#
+#                                      Defaults to "$(nproc)", the number of CPU
+#                                      threads available on the machine.
 #
 #     DISTCC_AUTO_COMPILER_MEMORY   The amount of memory **in MiB** that is
 #                                   expected to be consumed by a **single**

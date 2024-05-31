@@ -20,14 +20,6 @@
 #    accessible as a local port. But this makes this script synergise well
 #    with SSH tunnels.
 #
-# ENVIRONMENT VARIABLES
-#
-#    DISTCC_NUM_ONLY_LOCAL
-#                          The number of jobs to run locally if *NO* remote
-#                          machines are found available.
-#                          Defaults to $(nproc), the number of cores available.
-#
-#
 # HOW TO SET UP SSH TUNNEL
 #
 #    In your SSH configuration file (conventionally ~/.ssh/config) use the
@@ -52,10 +44,6 @@
 #
 #    Whisperity (http://github.com/Whisperity)
 ################################################################################
-
-function _dccsh_dump_config {
-    _dccsh_debug "DISTCC_NUM_ONLY_LOCAL:    $DISTCC_NUM_ONLY_LOCAL"
-}
 
 # Returns true if $1 is listening on the local machine.
 function check_tcpport_listen {
@@ -116,22 +104,6 @@ function _dccsh_parse_distcc_ports {
     done
 }
 
-# Calculates how many local *compiling* workers are allowed, based on user
-# configuration.
-# Parameters: $1 - DISTCC_NUM_ONLY_LOCAL, $2 - DISTCC_NUM_FIRST_LOCAL.
-function _dccsh_calculate_local_workers {
-    if [ $DCCSH_TOTAL_JOBS -eq 0 ]; then
-        local LOCAL_JOB=$1
-        if [ -z $LOCAL_JOB -o $LOCAL_JOB -eq -1 ]; then
-            _dccsh_debug "DISTCC_NUM_ONLY_LOCAL unset, defaulting to '$(nproc)'"
-            LOCAL_JOB=$(nproc)
-        fi
-    fi
-
-    _dccsh_debug "Setting execution with $LOCAL_JOB jobs locally!"
-    DCCSH_LOCAL_JOBS=$LOCAL_JOB
-}
-
 # Adds building some TUs on the local machine to the DCCSH_ variables, based
 # on environmental configuration.
 function _dccsh_append_localhost {
@@ -153,7 +125,6 @@ function _dccsh_append_preprocess_jobs {
 
 function _dccsh_cleanup_vars {
     DCCSH_HOSTS=""
-    DCCSH_TOTAL_JOBS=0
     DCCSH_LOCAL_JOBS=0
     DCCSH_MEM_PER_BUILD=0
 }
@@ -171,18 +142,11 @@ function _dccsh_run_distcc {
 
 # Prepares running the build remotely. This is the entry point of the script.
 function distcc_build {
-    _dccsh_dump_config
-    _dccsh_debug "command line is: $*"
-
     _dccsh_parse_distcc_ports
-
-    _dccsh_calculate_local_workers \
-            ${DISTCC_NUM_ONLY_LOCAL:-"-1"} ${DISTCC_NUM_FIRST_LOCAL:-"-1"}
 
     _dccsh_append_localhost
     _dccsh_append_preprocess_jobs
 
-    _dccsh_debug "Running $DCCSH_TOTAL_JOBS threads"
     _dccsh_run_distcc "$DCCSH_HOSTS" $* -j "$DCCSH_TOTAL_JOBS"
     local R=$?
 
