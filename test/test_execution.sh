@@ -28,12 +28,19 @@ execution_local_only() {
   DISTCC_AUTO_HOSTS="non-existent" \
     DISTCC_AUTO_FALLBACK_LOCAL_JOBS=4 \
     DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS=0 \
-    distcc_build "echo"
+    distcc_build \
+      "$@"
 }
 
 test_execution_local_only() {
-  assert_status_code 0 execution_local_only
-  assert_equals "-j 4" "$(execution_local_only)"
+  assert_status_code 0 "execution_local_only \"echo\""
+  assert_equals "-j 4" "$(execution_local_only "echo")"
+}
+
+test_execution_supports_driving_through_ccache() {
+  assert_equals \
+    "CCACHE_PREFIX=distcc" \
+    "$(execution_local_only "./no_job_arg_entry.sh env | grep CCACHE_PREFIX")"
 }
 
 
@@ -59,7 +66,8 @@ execution_fake_remote_exists() {
     DISTCC_AUTO_EARLY_LOCAL_JOBS=2 \
     DISTCC_AUTO_FALLBACK_LOCAL_JOBS=4 \
     DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS=0 \
-    distcc_build "$@"
+    distcc_build \
+      "$@"
 }
 
 test_execution_fake_remote_exists() {
@@ -78,7 +86,8 @@ execution_fake_remote_exists_with_preprocessor() {
     DISTCC_AUTO_EARLY_LOCAL_JOBS=2 \
     DISTCC_AUTO_FALLBACK_LOCAL_JOBS=4 \
     DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS=3 \
-    distcc_build "$@"
+    distcc_build \
+      "$@"
 }
 
 test_execution_fake_remote_exists_with_preprocessor() {
@@ -89,6 +98,18 @@ test_execution_fake_remote_exists_with_preprocessor() {
     "DISTCC_HOSTS=localhost/2 --localslots=2 --localslots_cpp=3 localhost:1234/8,lzo" \
     "$(execution_fake_remote_exists_with_preprocessor \
       "./no_job_arg_entry.sh env | grep DISTCC")"
+
+}
+
+test_execution_fake_remote_exists_with_preprocessor_cleans_environment() {
+  assert_equals \
+    "" \
+    "$(execution_fake_remote_exists_with_preprocessor \
+      "./no_job_arg_entry.sh env | grep -i DISTCC_AUTO")"
+  assert_equals \
+    "" \
+    "$(execution_fake_remote_exists_with_preprocessor \
+      "./no_job_arg_entry.sh env | grep -i DCCSH")"
 }
 
 execution_fake_remote_does_not_exist() {
@@ -99,7 +120,8 @@ execution_fake_remote_does_not_exist() {
     DISTCC_AUTO_EARLY_LOCAL_JOBS=2 \
     DISTCC_AUTO_FALLBACK_LOCAL_JOBS=4 \
     DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS=0 \
-    distcc_build "$@"
+    distcc_build \
+      "$@"
 }
 
 test_execution_fake_remote_does_not_exist() {
