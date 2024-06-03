@@ -210,6 +210,30 @@
 ################################################################################
 
 
+function _distcc_auto_lib_path {
+  # Determines the location where the currently loaded script is.
+  # Needed to accurately source the actual "library" code when distcc_build is
+  # called.
+  #
+  # Via http://stackoverflow.com/a/246128.
+
+  local file="${BASH_SOURCE[0]}"
+  local dir
+  while [ -L "$file" ]; do
+    dir=$( cd -P "$( dirname "$file" )" >/dev/null 2>&1 && pwd )
+    file=$(readlink "$file")
+    [[ "$file" != /* ]] && file=$dir/$file
+  done
+  dir=$( cd -P "$( dirname "$file" )" >/dev/null 2>&1 && pwd )
+
+  # Return value.
+  echo "$file"
+}
+
+
+_DCCSH_SCRIPT_PATH="$(dirname -- "$(readlink -f "$(_distcc_auto_lib_path)")")"
+
+
 function distcc_build {
   if [ -n "${DISTCC_HOSTS}" ]; then
     echo "WARNING: Calling distcc_build, but environment variable" \
@@ -220,5 +244,5 @@ function distcc_build {
 
   env \
     --unset=DISTCC_HOSTS \
-    bash -c "source ./distcc-driver-lib.sh; distcc_driver $*"
+    bash -c "source ${_DCCSH_SCRIPT_PATH}/distcc-driver-lib.sh; distcc_driver $*"
 }

@@ -296,7 +296,7 @@ function fetch_worker_capacity {
   # shellcheck disable=SC2181
   if [ $? -ne 0 ]; then
     log "ERROR" "Failed to query capacity of host" \
-      "\"${worker_connection_fields[0]}://$hostname:${worker_connection_fields[2]}\"!" \
+      "\"${worker_connection_fields[0]}://$hostname:$stat_port\"!" \
       "Likely the host is unavailable." \
       "See curl error message above for details!"
     return 1
@@ -552,13 +552,19 @@ function distcc_driver {
     exit 96
   fi
 
-  debug "Invoking command line is: $*"
-  print_configuration
+  if [ $# -eq 0 ]; then
+    log "FATAL" "'distcc_driver' called without specifying a command to" \
+      "execute!"
+    exit 96
+  fi
 
   if [ -z "$DISTCC_AUTO_HOSTS" ]; then
     log "FATAL" "'distcc_driver' called without setting 'DISTCC_AUTO_HOSTS'!"
     exit 96
   fi
+
+  debug "Invoking command line is: $*"
+  print_configuration
 
 
   # Parse user configuration of hosts and query worker capabilities.
@@ -624,7 +630,7 @@ function distcc_driver {
   local total_job_count=0
   if [ "$num_remotes" -ne 0 ]; then
     num_remote_jobs="$(sum_worker_job_counts "${workers[@]}")"
-    total_job_count="$num_remote_jobs"
+    total_job_count="$(( num_remote_jobs + requested_local_jobs ))"
   else
     total_job_count="$requested_local_jobs"
   fi
@@ -638,8 +644,11 @@ function distcc_driver {
   local preprocessor_saturation_jobs="${DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS"}"
   if [ "$preprocessor_saturation_jobs" -eq 0 ]; then
     debug "Preprocessor saturation job count == 0: Skip setting up"
+  elif [ "$num_remotes" -eq 0 ]; then
+    debug "No remote workers: skip preprocessor saturation jobs"
+    preprocessor_saturation_jobs=0
   else
-    total_job_count="$(( num_remote_jobs + preprocessor_saturation_jobs ))"
+    total_job_count="$(( total_job_count + preprocessor_saturation_jobs ))"
   fi
 
   log "INFO" "Building '-j $total_job_count':"
