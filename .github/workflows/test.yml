@@ -36,7 +36,7 @@ jobs:
           ./shellcheck \
             --color=always \
             "distcc.sh" \
-            "distcc-driver-lib.sh"
+            lib/*.sh
 
   unit_test:
     name: "Unit tests"

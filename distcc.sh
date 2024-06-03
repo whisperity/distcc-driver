@@ -130,7 +130,7 @@
 #
 #
 #   Additional implementation-detail configuration variables exist in
-#   'distcc-driver-lib.sh', which need not be altered for normal operation.
+#   'driver.sh', which need not be altered for normal operation.
 #
 #
 # HOST SPECIFICATION
@@ -260,5 +260,5 @@ function distcc_build {
 
   env \
     --unset=DISTCC_HOSTS \
-    bash -c "source ${_DCCSH_SCRIPT_PATH}/distcc-driver-lib.sh; distcc_driver $*"
+    bash -c "source ${_DCCSH_SCRIPT_PATH}/lib/driver.sh; distcc_driver $*"
 }

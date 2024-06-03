@@ -6,7 +6,7 @@
 #
 # NAME
 #
-#   distcc-driver-lib.sh
+#   distcc-driver-lib
 #
 #
 # SUMMARY
@@ -86,14 +86,14 @@ function check_commands {
   _check_command head
   _check_command mktemp
   _check_command nproc
-  # _check_command rm
+  _check_command rm
   _check_command sed
   _check_command sort
   _check_command tr
 
-  # Check some "positive" tools which lack only turns off optional features.
   if command -v ssh >/dev/null; then
-    _DCCSH_HAS_SSH_SUPPORT=1
+    # shellcheck disable=SC1091
+    source "$(dirname -- "${BASH_SOURCE[0]}")/ssh.sh"
   fi
 
   return "$_DCCSH_HAS_MISSING_TOOLS"
@@ -281,76 +281,6 @@ function parse_tcp_hostspec {
   array '/' "tcp" "$hostname" "$job_port" "$stat_port"
 }
 
-function parse_ssh_hostspec {
-  # Parses an AUTO_HOST_SPEC which is according to the SSH_HOST grammar.
-  # Returns the single '/'-separated split specification fields:
-  # "PROTOCOL/[USERNAME@]HOSTNAME[:PORT]/
-
-  local hostspec="$1"
-  local original_hostspec="$hostspec"
-
-  local ssh_full_host
-  ssh_full_host="$(echo "$hostspec" | grep -Eo '^([^/]*)')"
-
-  local username
-  local match_username
-  match_username="$(echo "$ssh_full_host" | grep -Eo '^([^@]*)@' \
-    | sed 's/@$//')"
-  if [ -n "$match_username" ]; then
-    username="$match_username"
-    hostspec="${hostspec/"$username@"/}"
-  fi
-
-  local hostname
-  hostname="$(echo "$hostspec" | grep -Eo '^([^/]*)')"
-  hostname="$(get_hostname_from_hostspec "$hostname")"
-  hostspec="${hostspec/"$hostname"/}"
-
-  if [ -n "$username" ]; then
-    debug "  - User: $username"
-  fi
-
-  local ssh_port
-  local match_port
-  match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
-  if [ -n "$match_port" ]; then
-    # If the match-port matched with ':' as the prefix, it MUST be the
-    # "SSH port", as per the grammar definition for SSH_HOST.
-    ssh_port="$match_port"
-    hostspec="${hostspec/":$ssh_port"/}"
-    debug "  - SSH port: $ssh_port"
-  fi
-
-  local job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
-  local stat_port="$_DCCSH_DEFAULT_STATS_PORT"
-  match_port="$(echo "$hostspec" | grep -Eo '^/[0-9]{1,5}' | sed 's/^\///')"
-  if [ -n "$match_port" ]; then
-    # If the match-port matched **once** with '/' as the prefix, it MUST be the
-    # "job port", as per the grammar definition for SSH_HOST.
-    job_port="$match_port"
-    hostspec="${hostspec/"/$job_port"/}"
-    debug "  - Port: $job_port"
-  fi
-  match_port="$(echo "$hostspec" | grep -Eo '^/[0-9]{1,5}' | sed 's/^\///')"
-  if [ -n "$match_port" ]; then
-    # If the match-port matched **twice** with '/' as the prefix, the second
-    # match MUST be the "stats port", as per the grammar definition for
-    # SSH_HOST.
-    stat_port="$match_port"
-    hostspec="${hostspec/"/$stat_port"/}"
-    debug "  - Stat: $stat_port"
-  fi
-
-  # After parsing, the hostspec should have emptied.
-  if [ -n "$hostspec" ]; then
-    log "WARNING" "Parsing of malformed DISTCC_AUTO_HOSTS entry" \
-      "\"$original_hostspec\" did not conclude cleanly, and \"$hostspec\"" \
-      "was ignored!"
-  fi
-
-  # Return value.
-  array '/' "ssh" "$ssh_full_host" "$job_port" "$stat_port"
-}
 
 _DCCSH_ALREADY_WARNED_ABOUT_LACK_OF_SSH=0
 
@@ -559,13 +489,12 @@ function transform_non_trivial_worker_hosts {
         # Noop.
         ;;
       "ssh")
-        local ssh_full_host="${hostspec_fields[1]}"
-        debug "Transforming SSH host: $ssh_full_host"
-        echo "SSH? $ssh_full_host" >&2
+        if [ "$_DCCSH_HAS_SSH_SUPPORT" -ne 1 ]; then
+          continue
+        fi
 
-        hostspec="TODO"
-        # TODO: We need to create a real SSH tunnel here and set up the local
-        # forwarding of the remote ports.
+        debug "Transforming SSH host: $hostspec ..."
+        hostspec="$(act_upon_transform_ssh_hostspec "$hostspec")"
         ;;
     esac
 
@@ -783,6 +712,24 @@ function assemble_distcc_hosts {
 }
 
 
+function cleanup {
+  # Cleans up some potential side effects created by the driver's execution,
+  # such as temporary directories, tunnels, etc.
+
+  if [ "$_DCCSH_HAS_SSH_SUPPORT" -eq 1 ]; then
+    cleanup_ssh
+  fi
+
+  if [ -z "$DCCSH_DEBUG" ]; then
+    rm -rf "$DCCSH_TEMP"
+  else
+    debug "Skip removing administrative temporary directory: $DCCSH_TEMP"
+  fi
+
+  unset DCCSH_TEMP
+}
+
+
 function drive_distcc {
   # Actually executes the user-specified command with passing the job count $1
   # in a command-line parameter and running with $2 set as the 'DISTCC_HOSTS'
@@ -971,7 +918,7 @@ function distcc_driver {
 
 
   # Clean up potential side-effects.
-  # cleanup "$DCCSH_TEMP"
+  cleanup
 
 
 
