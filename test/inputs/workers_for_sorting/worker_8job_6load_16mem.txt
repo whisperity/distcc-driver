@@ -1,0 +1,31 @@
+argv /distccd
+<distccstats>
+dcc_tcp_accept 0
+dcc_rej_bad_req 0
+dcc_rej_overload 0
+dcc_compile_ok 0
+dcc_compile_error 0
+dcc_compile_timeout 0
+dcc_cli_disconnect 0
+dcc_other 0
+dcc_longest_job none
+dcc_longest_job_compiler none
+dcc_longest_job_time_msecs -1
+dcc_max_kids 8
+dcc_avg_kids1 0
+dcc_avg_kids2 0
+dcc_avg_kids3 0
+dcc_current_load 6
+dcc_load1 6
+dcc_load2 6
+dcc_load3 6
+dcc_num_compiles1 0
+dcc_num_compiles2 0
+dcc_num_compiles3 0
+dcc_num_procstate_D 0
+dcc_max_RSS 0
+dcc_max_RSS_name (none)
+dcc_io_rate 0
+dcc_free_space 4096 MB
+dcc_free_mem 16384 MB
+</distccstats>

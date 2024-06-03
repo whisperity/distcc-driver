@@ -75,8 +75,11 @@ function check_commands {
   _check_command curl
   _check_command free
   _check_command grep
+  _check_command head
   _check_command nproc
   _check_command sed
+  _check_command sort
+  _check_command tr
 
   return "$_DCCSH_HAS_MISSING_TOOLS"
 }
@@ -361,7 +364,7 @@ function get_raw_worker_specifications {
   # Then queries the hosts to obtain the internal "WORKER SPECIFICATION", which
   # is the "HOST SPECIFICATION" fields extended with statistical and
   # performance information.
-  # Returns the remote workers in a semicolon (';')-separated array of
+  # Returns the remote workers in a semicolon (';') separated array of
   # "PROTOCOL/HOST/PORT/STAT_PORT/THREAD_COUNT/LOAD_AVG/FREE_MEM"
   # entries.
 
@@ -480,6 +483,35 @@ function scale_local_job_count {
 }
 
 
+function transform_workers_by_priority {
+  # Sorts the array of worker specifications, as provided in the variadic input
+  # parameter ($@), into a priority list based on the capacities received.
+  # Returns the worker specification in the exact same format, just in a
+  # different order, in a semicolon (';') separated array.
+  #
+  # The sorting prioritises servers:
+  #   * First, the servers that offer the most available workers.
+  #   * Then, for the groups of the same number of jobs, the servers with the
+  #     lower calculated load average is prioritised first.
+  #   * In case this ordering would still produce multiple head-to-head options,
+  #     prioritise the server with the more available RAM (if this information
+  #     is reported).
+  #
+  # Note that during normal function (although this is **NOT** assumed by this
+  # implementation), the number of jobs is scaled down based on the available
+  # RAM (if reported) anyway.
+
+  # Return value.
+  echo -e "$(array '\n' "$@")" | \
+    sort -t '/' \
+      -k5nr \
+      -k6n \
+      -k7nr | \
+    head -c -1 | \
+    tr '\n' ';'
+}
+
+
 function assemble_distcc_hosts {
   # Assembles the DISTCC_HOSTS environment variable, to be passed to distcc(1),
   # based on the local job slot count ($1), the local preprocessor count ($2),
@@ -574,6 +606,8 @@ function distcc_driver {
 
 
   # Scale workers' known specification to available capacity, if needed.
+  # Then, select the "best" workers (with the most available capacity) to be
+  # saturated first.
   local requested_per_job_mem
   if [ "$DISTCC_AUTO_COMPILER_MEMORY" == "0" ]; then
     debug "DISTCC_AUTO_COMPILER_MEMORY == \"0\": Skip scaling workers"
@@ -584,6 +618,12 @@ function distcc_driver {
   fi
 
   local num_remotes="${#workers[@]}"
+
+  if [ "$num_remotes" -gt 0 ]; then
+    IFS=';' read -ra workers \
+      <<< "$(transform_workers_by_priority "${workers[@]}")"
+  fi
+
   debug "Effective remote specification:"
   for worker_specification in "${workers[@]}"; do
     debug "  - $worker_specification"

@@ -11,14 +11,14 @@ dcc_other 0
 dcc_longest_job none
 dcc_longest_job_compiler none
 dcc_longest_job_time_msecs -1
-dcc_max_kids 1
+dcc_max_kids 4
 dcc_avg_kids1 0
 dcc_avg_kids2 0
 dcc_avg_kids3 0
-dcc_current_load 64
-dcc_load1 8.5
-dcc_load2 12.0
-dcc_load3 2.0
+dcc_current_load 5
+dcc_load1 5
+dcc_load2 5
+dcc_load3 5
 dcc_num_compiles1 0
 dcc_num_compiles2 0
 dcc_num_compiles3 0
@@ -27,5 +27,5 @@ dcc_max_RSS 0
 dcc_max_RSS_name (none)
 dcc_io_rate 0
 dcc_free_space 4096 MB
+dcc_free_mem 8192 MB
 </distccstats>
-

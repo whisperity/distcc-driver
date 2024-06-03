@@ -15,10 +15,10 @@ dcc_max_kids 8
 dcc_avg_kids1 0
 dcc_avg_kids2 0
 dcc_avg_kids3 0
-dcc_current_load 4
-dcc_load1 2.0
-dcc_load2 1.0
-dcc_load3 3.0
+dcc_current_load 2
+dcc_load1 2
+dcc_load2 2
+dcc_load3 2
 dcc_num_compiles1 0
 dcc_num_compiles2 0
 dcc_num_compiles3 0
@@ -26,6 +26,6 @@ dcc_num_procstate_D 0
 dcc_max_RSS 0
 dcc_max_RSS_name (none)
 dcc_io_rate 0
-dcc_free_space 1024 MB
+dcc_free_space 4096 MB
+dcc_free_mem 32768 MB
 </distccstats>
-
