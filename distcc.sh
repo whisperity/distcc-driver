@@ -146,7 +146,9 @@
 #
 #     DISTCC_AUTO_HOSTS = AUTO_HOST_SPEC ...
 #     AUTO_HOST_SPEC    = TCP_HOST
+#                       | SSH_HOST
 #     TCP_HOST          = [tcp://]HOSTNAME[:DISTCC_PORT[:STATS_PORT]]
+#     SSH_HOST          = ssh://[SSH_USER@]HOSTNAME[:SSH_PORT][/DISTCC_PORT[/STATS_PORT]]
 #     HOSTNAME          = ALPHANUMERIC_HOSTNAME
 #                       | IPv4_ADDRESS
 #                       | IPv6_ADDRESS
@@ -175,6 +177,20 @@
 #                               The DistCC server **MUST** support and be
 #                               started with the "--stats" and optional
 #                               "--stats-port PORT" arguments.
+#
+#     SSH_USER                  The username to use when logging in over SSH to
+#                               the specified server.
+#                               Defaults to nothing, in which case ssh(1) client
+#                               will default it to the "User" set in the SSH
+#                               configuration file, or with the current
+#                               user's login name.
+#
+#     SSH_PORT                  The port where the remote server's SSH daemon,
+#                               sshd(1), is listening for connections.
+#                               Defaults to nothing, in which case the ssh(1)
+#                               client will default it to the "Port" set in the
+#                               SSH configuration file, or use the global
+#                               default 22.
 #
 #
 # EXIT CODES

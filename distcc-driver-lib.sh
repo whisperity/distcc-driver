@@ -23,6 +23,12 @@
 #     DCCSH_DEBUG               If defined to a non-empty string, additional
 #                               debugging and tracing information is printed.
 #
+#     DCCSH_TEMP                A temporary directory where helper functions in
+#                               the implementation can create description files
+#                               for side-effects.
+#                               Defaults to a random-generated temporary
+#                               directory path, as created by mktemp(1).
+#
 #
 # AUTHOR
 #
@@ -57,6 +63,8 @@ esac
 
 
 _DCCSH_HAS_MISSING_TOOLS=0
+_DCCSH_HAS_SSH_SUPPORT=0
+
 function _check_command {
   # This script depends on some usually available tools for helper calculations.
   # If these tools are not available, prevent loading the script.
@@ -76,10 +84,17 @@ function check_commands {
   _check_command free
   _check_command grep
   _check_command head
+  _check_command mktemp
   _check_command nproc
+  # _check_command rm
   _check_command sed
   _check_command sort
   _check_command tr
+
+  # Check some "positive" tools which lack only turns off optional features.
+  if command -v ssh >/dev/null; then
+    _DCCSH_HAS_SSH_SUPPORT=1
+  fi
 
   return "$_DCCSH_HAS_MISSING_TOOLS"
 }
@@ -198,6 +213,147 @@ IPv4_REGEX='((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.){3}(25[0-5]|(2[0-4]|1\d|[1-9]|)\d
 # to do a best guess whether the host is an IPv6 one.
 IPv6_REGEX='(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))'
 
+function get_hostname_from_hostspec {
+  # Retrieves either an ALPHANUMERIC_HOSTNAME, an IPv4_ADDRESS, or an
+  # IPv6_ADDRESS from the specified partial hostspec line in $1.
+
+  local hostspec="$1"
+
+  local hostname
+  local match_ipv4
+  local match_ipv6
+  match_ipv4="$(echo "$hostspec" | grep -Po "$IPv4_REGEX")"
+  match_ipv6="$(echo "$hostspec" | grep -Eo "$IPv6_REGEX")"
+  if [ -n "$match_ipv4" ]; then
+    hostname="$match_ipv4"
+    debug "  - Host (IPv4): $hostname"
+  elif [ -n "$match_ipv6" ]; then
+    hostname="[$match_ipv6]"
+    debug "  - Host (IPv6): $hostname"
+  else
+    hostname="$(echo "$hostspec" | grep -Eo '^([^:]*)')"
+    debug "  - Host: $hostname"
+  fi
+
+  # Return value.
+  echo "$hostname"
+}
+
+function parse_tcp_hostspec {
+  # Parses an AUTO_HOST_SPEC which is according to the TCP_HOST grammar.
+  # Returns the single '/'-separated split specification fields.
+
+  local hostspec="$1"
+  local original_hostspec="$hostspec"
+
+  local hostname
+  hostname="$(get_hostname_from_hostspec "$hostspec")"
+  hostspec="${hostspec/"$hostname"/}"
+
+  local job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
+  local stat_port="$_DCCSH_DEFAULT_STATS_PORT"
+  local match_port
+  match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
+  if [ -n "$match_port" ]; then
+    # If the match-port matched **once**, it MUST be the "job port", as per
+    # the grammar definition for TCP_HOST.
+    job_port="$match_port"
+    hostspec="${hostspec/":$job_port"/}"
+    debug "  - Port: $job_port"
+  fi
+  match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
+  if [ -n "$match_port" ]; then
+    # If the match-port matched **twice**, the second match MUST be the
+    # "stats port", as per the grammar definition for TCP_HOST.
+    stat_port="$match_port"
+    hostspec="${hostspec/":$stat_port"/}"
+    debug "  - Stat: $stat_port"
+  fi
+
+  # After parsing, the hostspec should have emptied.
+  if [ -n "$hostspec" ]; then
+    log "WARNING" "Parsing of malformed DISTCC_AUTO_HOSTS entry" \
+      "\"$original_hostspec\" did not conclude cleanly, and \"$hostspec\"" \
+      "was ignored!"
+  fi
+
+  # Return value.
+  array '/' "tcp" "$hostname" "$job_port" "$stat_port"
+}
+
+function parse_ssh_hostspec {
+  # Parses an AUTO_HOST_SPEC which is according to the SSH_HOST grammar.
+  # Returns the single '/'-separated split specification fields:
+  # "PROTOCOL/[USERNAME@]HOSTNAME[:PORT]/
+
+  local hostspec="$1"
+  local original_hostspec="$hostspec"
+
+  local ssh_full_host
+  ssh_full_host="$(echo "$hostspec" | grep -Eo '^([^/]*)')"
+
+  local username
+  local match_username
+  match_username="$(echo "$ssh_full_host" | grep -Eo '^([^@]*)@' \
+    | sed 's/@$//')"
+  if [ -n "$match_username" ]; then
+    username="$match_username"
+    hostspec="${hostspec/"$username@"/}"
+  fi
+
+  local hostname
+  hostname="$(echo "$hostspec" | grep -Eo '^([^/]*)')"
+  hostname="$(get_hostname_from_hostspec "$hostname")"
+  hostspec="${hostspec/"$hostname"/}"
+
+  if [ -n "$username" ]; then
+    debug "  - User: $username"
+  fi
+
+  local ssh_port
+  local match_port
+  match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
+  if [ -n "$match_port" ]; then
+    # If the match-port matched with ':' as the prefix, it MUST be the
+    # "SSH port", as per the grammar definition for SSH_HOST.
+    ssh_port="$match_port"
+    hostspec="${hostspec/":$ssh_port"/}"
+    debug "  - SSH port: $ssh_port"
+  fi
+
+  local job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
+  local stat_port="$_DCCSH_DEFAULT_STATS_PORT"
+  match_port="$(echo "$hostspec" | grep -Eo '^/[0-9]{1,5}' | sed 's/^\///')"
+  if [ -n "$match_port" ]; then
+    # If the match-port matched **once** with '/' as the prefix, it MUST be the
+    # "job port", as per the grammar definition for SSH_HOST.
+    job_port="$match_port"
+    hostspec="${hostspec/"/$job_port"/}"
+    debug "  - Port: $job_port"
+  fi
+  match_port="$(echo "$hostspec" | grep -Eo '^/[0-9]{1,5}' | sed 's/^\///')"
+  if [ -n "$match_port" ]; then
+    # If the match-port matched **twice** with '/' as the prefix, the second
+    # match MUST be the "stats port", as per the grammar definition for
+    # SSH_HOST.
+    stat_port="$match_port"
+    hostspec="${hostspec/"/$stat_port"/}"
+    debug "  - Stat: $stat_port"
+  fi
+
+  # After parsing, the hostspec should have emptied.
+  if [ -n "$hostspec" ]; then
+    log "WARNING" "Parsing of malformed DISTCC_AUTO_HOSTS entry" \
+      "\"$original_hostspec\" did not conclude cleanly, and \"$hostspec\"" \
+      "was ignored!"
+  fi
+
+  # Return value.
+  array '/' "ssh" "$ssh_full_host" "$job_port" "$stat_port"
+}
+
+_DCCSH_ALREADY_WARNED_ABOUT_LACK_OF_SSH=0
+
 function parse_distcc_auto_hosts {
   # Parses the contents of the first argument ($1) according to the
   # DISTCC_AUTO_HOSTS specification syntax.
@@ -211,65 +367,42 @@ function parse_distcc_auto_hosts {
     local original_hostspec="$hostspec"
     debug "Parsing DISTCC_AUTO_HOSTS entry: \"$hostspec\" ..."
 
-    local hostname
     local protocol
     protocol="$(echo "$hostspec" | grep -Eo "^.*?://" | sed 's/:\/\/$//')"
-    hostspec="${hostspec/"$protocol://"/}"
+    if [ -n "$protocol" ]; then
+      hostspec="${hostspec/"$protocol://"/}"
+    else
+      protocol="tcp"
+    fi
 
+    local parsed_hostspec
     case "$protocol" in
-      "tcp"|*)
-        protocol="tcp"
+      "tcp")
         debug "  - TCP"
-
-        local match_ipv4
-        local match_ipv6
-        match_ipv4="$(echo "$hostspec" | grep -Po "$IPv4_REGEX")"
-        match_ipv6="$(echo "$hostspec" | grep -Eo "$IPv6_REGEX")"
-        if [ -n "$match_ipv4" ]; then
-          hostname="$match_ipv4"
-          hostspec="${hostspec/"$hostname"/}"
-          debug "  - Host (IPv4): $hostname"
-        elif [ -n "$match_ipv6" ]; then
-          hostname="[$match_ipv6]"
-          hostspec="${hostspec/"$hostname"/}"
-          debug "  - Host (IPv6): $hostname"
-        else
-          hostname="$(echo "$hostspec" | grep -Eo '^([^:]*)')"
-          hostspec="${hostspec/"$hostname"/}"
-          debug "  - Host: $hostname"
-        fi
+        parsed_hostspec="$(parse_tcp_hostspec "$hostspec")"
         ;;
-      # TODO: Implement handling local SSH tunnels for listening sockets.
+      "ssh")
+        if [ "$_DCCSH_HAS_SSH_SUPPORT" -ne 1 ]; then
+          if [ "$_DCCSH_ALREADY_WARNED_ABOUT_LACK_OF_SSH" -eq 0 ]; then
+            log "WARNING" \
+              "SSH workers are not supported in the current environment, make" \
+              "sure to have the 'ssh' client program installed!"
+            _DCCSH_ALREADY_WARNED_ABOUT_LACK_OF_SSH=1
+          fi
+          continue
+        fi
+
+        debug "  - SSH"
+        parsed_hostspec="$(parse_ssh_hostspec "$hostspec")"
+        ;;
+      *)
+        log "ERROR" "Unknown protocol \"$protocol\" in DISTCC_AUTO_HOSTS" \
+          "entry \"$original_hostspec\": Skipping!"
+        continue
+        ;;
     esac
 
-    local job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
-    local stat_port="$_DCCSH_DEFAULT_STATS_PORT"
-    local match_port
-    match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
-    if [ -n "$match_port" ]; then
-      # If the match-port matched **once**, it MUST be the "job port", as per
-      # the grammar definition for DISTCC_AUTO_HOSTS.
-      job_port="$match_port"
-      hostspec="${hostspec/":$job_port"/}"
-      debug "  - Port: $job_port"
-    fi
-    match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
-    if [ -n "$match_port" ]; then
-      # If the match-port matched **twice**, the second match MUST be the
-      # "stats port", as per the grammar definition for DISTCC_AUTO_HOSTS.
-      stat_port="$match_port"
-      hostspec="${hostspec/":$stat_port"/}"
-      debug "  - Stat: $stat_port"
-    fi
-
-    # After parsing, the hostspec should have emptied.
-    if [ -n "$hostspec" ]; then
-      log "WARNING" "Parsing of malformed DISTCC_AUTO_HOSTS entry" \
-        "\"$original_hostspec\" did not conclude cleanly, and" \
-        "\"$hostspec\" was ignored!"
-    fi
-
-    hosts+=("$(array '/' "$protocol" "$hostname" "$job_port" "$stat_port")")
+    hosts+=("$parsed_hostspec")
   done
 
   # Return value.
@@ -295,15 +428,26 @@ function unique_host_specifications {
 function fetch_worker_capacity {
   # Downloads and parses **one** DistCC host's ($1) "statistics" output to
   # extract the server's capacity and statistical details from it.
+  # Optionally, $2 might specify the "ORIGINAL_HOST_SPECIFICATION", but this is
+  # only used for debugging purposes.
+  #
   # Returns the worker capacity information: "THREAD_COUNT/LOAD_AVG/FREE_MEM".
 
   local hostspec="$1"
-  debug "Querying host capacity: $hostspec ..."
+  local original_hostspec="$2"
+  debug "Querying host capacity: $original_hostspec ..."
 
-  local worker_connection_fields
-  IFS='/' read -ra worker_connection_fields <<< "$hostspec"
-  local hostname="${worker_connection_fields[1]}"
-  local stat_port="${worker_connection_fields[3]}"
+  local original_hostspec_fields
+  local hostspec_fields
+  IFS='/' read -ra original_hostspec_fields <<< "$original_hostspec"
+  IFS='/' read -ra hostspec_fields <<< "$hostspec"
+
+  local protocol="${hostspec_fields[0]}"
+  local original_protocol="${original_hostspec_fields[0]}"
+  local hostname="${hostspec_fields[1]}"
+  local original_hostname="${original_hostspec_fields[1]}"
+  local stat_port="${hostspec_fields[3]}"
+  local original_stat_port="${original_hostspec_fields[3]}"
 
   local stat_response
   stat_response="$(curl "$hostname:$stat_port" \
@@ -314,9 +458,13 @@ function fetch_worker_capacity {
   # shellcheck disable=SC2181
   if [ $? -ne 0 ]; then
     log "ERROR" "Failed to query capacity of host" \
-      "\"${worker_connection_fields[0]}://$hostname:$stat_port\"!" \
+      "\"[$original_protocol://$original_hostname]:$original_stat_port\"!" \
       "Likely the host is unavailable." \
       "See curl error message above for details!"
+    if [ "$hostspec" != "$original_hostspec" ]; then
+      log "NOTE" "The actual query was sent to" \
+        "\"[$protocol://$hostname]:$stat_port\"!"
+    fi
     return 1
   fi
   # debug -e "Raw DistCC --stats response:\n${stat_response}"
@@ -355,16 +503,29 @@ function fetch_worker_capacities {
 
   local workers=()
 
-  for worker_connection in "$@"; do
+  for hostspec in "$@"; do
+    local hostspec_and_original_hostspec
+    local hostspec_fields
+    local original_hostspec
+    IFS='=' read -ra hostspec_and_original_hostspec <<< "$hostspec"
+    if [ "${#hostspec_and_original_hostspec[@]}" -eq 2 ]; then
+      original_hostspec="${hostspec_and_original_hostspec[0]}"
+      hostspec="${hostspec_and_original_hostspec[1]}"
+    else
+      original_hostspec="$hostspec"
+    fi
+
     local worker_capacity
-    worker_capacity="$(fetch_worker_capacity "$worker_connection")"
+    worker_capacity="$(fetch_worker_capacity \
+      "$hostspec" \
+      "$original_hostspec")"
     # shellcheck disable=SC2181
     if [ $? -ne 0 ]; then
-      debug "Querying host capacity: $worker_connection FAILED!"
+      debug "Querying host capacity: $original_hostspec FAILED!"
       continue
     fi
 
-    workers+=("$worker_connection"/"$worker_capacity")
+    workers+=("$hostspec"/"$worker_capacity")
   done
 
   # Return value.
@@ -372,22 +533,77 @@ function fetch_worker_capacities {
 }
 
 
+function transform_non_trivial_worker_hosts {
+  # Transforms non-trivial (e.g., SSH) host connections into connections that
+  # are actionable by DistCC, e.g., by opening an SSH tunnel, in the input
+  # parsed host specification list passed as the variadic input parameter ($@).
+
+  # Returns the remote workers in a semicolon (';') separated array of
+  # "[ORIGINAL_HOST_SPECIFICATION=]TRANSFORMED_HOST_SPECIFICATION" entries,
+  # where ORIGINAL_HOST_SPECIFICATION is the original
+  # "PROTOCOL/HOST/PORT/STAT_PORT" as present in the input, and may not be
+  # specified if no transformations were done; and
+  # TRANSFORMED_HOST_SPECIFICATION is the same 4-tuple of fields but guaranteed
+  # to be trivially actionable (aka. it is a pure TCP connection).
+
+  local hosts=()
+
+  for hostspec in "$@"; do
+    local original_hostspec="$hostspec"
+    local hostspec_fields
+    IFS='/' read -ra hostspec_fields <<< "$hostspec"
+
+    local protocol="${hostspec_fields[0]}"
+    case "$protocol" in
+      "tcp")
+        # Noop.
+        ;;
+      "ssh")
+        local ssh_full_host="${hostspec_fields[1]}"
+        debug "Transforming SSH host: $ssh_full_host"
+        echo "SSH? $ssh_full_host" >&2
+
+        hostspec="TODO"
+        # TODO: We need to create a real SSH tunnel here and set up the local
+        # forwarding of the remote ports.
+        ;;
+    esac
+
+    if [ "$original_hostspec" != "$hostspec" ]; then
+      hosts+=("$original_hostspec=$hostspec")
+    else
+      hosts+=("$hostspec")
+    fi
+  done
+
+  # Return value.
+  array ';' "${hosts[@]}"
+}
+
+
 function get_raw_worker_specifications {
   # Parses the first and only argument ($1) according to the DISTCC_AUTO_HOSTS
   # config variable's "HOST SPECIFICATION" syntax, obtaining a list of remote
   # worker hosts.
+  # For non-trivial (not pure TCP, e.g., SSH) hosts, protocol-specific
+  # additional actions (e.g., for SSH, the connection to the remote machine and
+  # setting up appropriate tunnels) take place.
   # Then queries the hosts to obtain the internal "WORKER SPECIFICATION", which
-  # is the "HOST SPECIFICATION" fields extended with statistical and
-  # performance information.
+  # is the (potentially transformed, see above) "HOST SPECIFICATION" fields
+  # extended with statistical and performance information.
+  #
   # Returns the remote workers in a semicolon (';') separated array of
   # "PROTOCOL/HOST/PORT/STAT_PORT/THREAD_COUNT/LOAD_AVG/FREE_MEM"
   # entries.
 
   local parsed_hosts
   IFS=';' read -ra parsed_hosts <<< "$(parse_distcc_auto_hosts "$1")"
-
   IFS=';' read -ra parsed_hosts \
     <<< "$(unique_host_specifications "${parsed_hosts[@]}")"
+  IFS=';' read -ra parsed_hosts \
+    <<< "$(transform_non_trivial_worker_hosts "${parsed_hosts[@]}")"
+
+  echo -e "Dummy transformed hostspec:\n\t${parsed_hosts[*]}" >&2
 
   # Return value.
   fetch_worker_capacities "${parsed_hosts[@]}"
@@ -599,19 +815,37 @@ function distcc_driver {
 
   # Startup, configuration and environment checking.
   if ! check_commands; then
-    exit 96
+    return 96
   fi
 
   if [ $# -eq 0 ]; then
     log "FATAL" "'distcc_driver' called without specifying a command to" \
       "execute!"
-    exit 96
+    return 96
   fi
 
   if [ -z "$DISTCC_AUTO_HOSTS" ]; then
     log "FATAL" "'distcc_driver' called without setting 'DISTCC_AUTO_HOSTS'!"
-    exit 96
+    return 96
   fi
+
+  if [ -z "$DCCSH_TEMP" ]; then
+    # Create a temporary directory for communication side-effects of helper
+    # functions that are executed in a subshell by command substitution.
+    export DCCSH_TEMP
+    DCCSH_TEMP="$(mktemp --directory --tmpdir="$XDG_RUNTIME_DIR")"
+  fi
+  if [ ! -d "$DCCSH_TEMP" ]; then
+    mkdir "$DCCSH_TEMP"
+
+    if [ ! -d "$DCCSH_TEMP" ]; then
+      log "FATAL" "Failed to actually create a necessary temporary directory:" \
+        "\"$DCCSH_TEMP\"!"
+      return 96
+    fi
+  fi
+  debug "Using administrative temporary directory: $DCCSH_TEMP"
+
 
   debug "Invoking command line is: $*"
   print_configuration
@@ -680,7 +914,7 @@ function distcc_driver {
     log "FATAL" "Refusing to build!"
     log "FATAL" "There are NO remote workers available, and local execution" \
       "was disabled either on request, or due to lack of available memory."
-    exit 97
+    return 97
   fi
 
   local num_remote_jobs=0
@@ -732,4 +966,14 @@ function distcc_driver {
 
   # Fire away the user's requested command.
   drive_distcc "$total_job_count" "${distcc_hosts[@]}" "$@"
+  local main_return_code=$?
+
+
+
+  # Clean up potential side-effects.
+  # cleanup "$DCCSH_TEMP"
+
+
+
+  return "$main_return_code"
 }

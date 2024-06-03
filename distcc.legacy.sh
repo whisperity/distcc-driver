@@ -2,23 +2,11 @@
 #
 ### distcc.sh(1)           DistCC remote auto-job script        distcc.sh(1) ###
 #
-# NAME
-#
-#    distcc.sh - DistCC remote auto-job script
-#
-# SYNOPSIS
-#
-#    source distcc.sh; distcc_build make my_target
-#
 # DESCRIPTION
 #
 #    This script depends on having ccache(1) installed and configured as your
 #    C(++) building system. This generally means that the CC and CXX compilers
 #    in your build process should come from /usr/lib/ccache.
-#
-#    A caveat built into this script is that the build machines should be
-#    accessible as a local port. But this makes this script synergise well
-#    with SSH tunnels.
 #
 # HOW TO SET UP SSH TUNNEL
 #
@@ -65,30 +53,4 @@ function check_tcpport_listen {
     fi
 
     return $R
-}
-
-# Parses the DISTCC_PORTS environmental variable.
-function _dccsh_parse_distcc_ports {
-    DCCSH_HOSTS=""
-    DCCSH_TOTAL_JOBS=0
-
-    for port_and_jobs in $DISTCC_PORTS; do
-        local PORT=$(echo $port_and_jobs | cut -d'/' -f 1)
-        local JOBS=$(echo $port_and_jobs | cut -d'/' -f 2)
-        _dccsh_debug "Adding: $PORT with $JOBS jobs..."
-
-        DCCSH_HOSTS=$(_dccsh_concat_port "$DCCSH_HOSTS" $PORT $JOBS)
-        if [ $? -eq 0 ]; then
-            DCCSH_TOTAL_JOBS=$(($DCCSH_TOTAL_JOBS + $JOBS))
-            _dccsh_debug "$PORT: responding, added, new total job count" \
-                "is: $DCCSH_TOTAL_JOBS"
-        else
-            _dccsh_debug "$PORT: did not respond."
-        fi
-    done
-}
-
-# Prepares running the build remotely. This is the entry point of the script.
-function distcc_build {
-    _dccsh_parse_distcc_ports
 }

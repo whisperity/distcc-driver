@@ -34,6 +34,26 @@ test_parse_distcc_auto_hosts() {
     "tcp/worker-machine-1/1234/5678;tcp/worker-machine-2/1234/5678" \
     "$(parse_distcc_auto_hosts \
       "worker-machine-1:1234:5678 worker-machine-2:1234:5678")"
+
+  assert_equals \
+    "" \
+    "$(parse_distcc_auto_hosts "unknown://example.com")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633;ssh/localhost/3632/3633" \
+    "$(parse_distcc_auto_hosts "localhost ssh://localhost")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633;ssh/user@localhost:2222/3632/3633" \
+    "$(parse_distcc_auto_hosts "localhost ssh://user@localhost:2222")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633;ssh/user@localhost:2222/1234/3633" \
+    "$(parse_distcc_auto_hosts "localhost ssh://user@localhost:2222/1234")"
+
+  assert_equals \
+    "tcp/localhost/3632/3633;ssh/user@localhost:2222/1234/5678" \
+    "$(parse_distcc_auto_hosts "localhost ssh://user@localhost:2222/1234/5678")"
 }
 
 
