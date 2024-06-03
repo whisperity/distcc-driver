@@ -277,6 +277,21 @@ function parse_distcc_auto_hosts {
 }
 
 
+function unique_host_specifications {
+  # Removes duplicate entries from the input array of host specifications, as
+  # passed through the variadic input parameter $@.
+  # The operation is stable with regards to the original order, and does
+  # **NOT** re-sort the resulting array.
+  # Returns a semicolon (';') separated array of host specifications.
+
+  # Return value.
+  echo -e "$(array '\n' "$@")" | \
+    awk '!(line_seen[ $0 ]++)' | \
+    head -c -1 | \
+    tr '\n' ';'
+}
+
+
 function fetch_worker_capacity {
   # Downloads and parses **one** DistCC host's ($1) "statistics" output to
   # extract the server's capacity and statistical details from it.
@@ -370,6 +385,9 @@ function get_raw_worker_specifications {
 
   local parsed_hosts
   IFS=';' read -ra parsed_hosts <<< "$(parse_distcc_auto_hosts "$1")"
+
+  IFS=';' read -ra parsed_hosts \
+    <<< "$(unique_host_specifications "${parsed_hosts[@]}")"
 
   # Return value.
   fetch_worker_capacities "${parsed_hosts[@]}"

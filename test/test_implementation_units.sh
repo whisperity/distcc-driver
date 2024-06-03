@@ -37,6 +37,19 @@ test_parse_distcc_auto_hosts() {
 }
 
 
+test_unique_host_specifications() {
+  assert_equals \
+    "tcp/localhost/3632/3633;tcp/localhost/1234/5678;tcp/example.com/80/443" \
+    "$(unique_host_specifications \
+      "tcp/localhost/3632/3633" \
+      "tcp/localhost/1234/5678" \
+      "tcp/localhost/3632/3633" \
+      "tcp/localhost/1234/5678" \
+      "tcp/example.com/80/443" \
+      "tcp/localhost/3632/3633")"
+}
+
+
 test_scale_worker_job_counts() {
   assert_equals \
     "tcp/localhost/3632/3633/16/0/-1" \
