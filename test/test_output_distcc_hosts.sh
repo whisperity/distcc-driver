@@ -6,6 +6,19 @@ source "./fake_http.sh"
 source "../distcc.sh"
 
 
+declare localhost_ip=""
+
+setup_suite() {
+  localhost_ip="$(ip address show dev lo \
+    | grep -Po 'inet \K.*?(?=[/ ])')"
+  echo "Assuming \"localhost\" is: \"$localhost_ip\" ..." >&2
+}
+
+teardown_suite() {
+  unset localhost_ip
+}
+
+
 execution_no_command() {
   distcc_build
 }
@@ -73,7 +86,7 @@ execution_fake_remote_exists() {
 test_execution_fake_remote_exists() {
   assert_equals "-j 10" "$(execution_fake_remote_exists "echo")"
   assert_equals \
-    "DISTCC_HOSTS=localhost/2 --localslots=2 localhost:1234/8,lzo" \
+    "DISTCC_HOSTS=localhost/2 --localslots=2 $localhost_ip:1234/8,lzo" \
     "$(execution_fake_remote_exists "./no_job_arg_entry.sh env | grep DISTCC")"
 }
 
@@ -95,7 +108,7 @@ test_execution_fake_remote_exists_with_preprocessor() {
     "-j 13" \
     "$(execution_fake_remote_exists_with_preprocessor "echo")"
   assert_equals \
-    "DISTCC_HOSTS=localhost/2 --localslots=2 --localslots_cpp=3 localhost:1234/8,lzo" \
+    "DISTCC_HOSTS=localhost/2 --localslots=2 --localslots_cpp=3 $localhost_ip:1234/8,lzo" \
     "$(execution_fake_remote_exists_with_preprocessor \
       "./no_job_arg_entry.sh env | grep DISTCC")"
 
@@ -154,7 +167,7 @@ execution_two_fake_remotes_both_exist() {
 test_execution_two_fake_remotes_both_exist() {
   assert_equals "-j 9" "$(execution_two_fake_remotes_both_exist "echo")"
   assert_equals \
-    "DISTCC_HOSTS=localhost:5678/8,lzo localhost:1234/1,lzo" \
+    "DISTCC_HOSTS=$localhost_ip:5678/8,lzo $localhost_ip:1234/1,lzo" \
     "$(execution_two_fake_remotes_both_exist \
       "./no_job_arg_entry.sh env | grep DISTCC")"
 }
@@ -178,7 +191,7 @@ execution_two_fake_remotes_small_missing() {
 test_execution_two_fake_remotes_small_missing() {
   assert_equals "-j 8" "$(execution_two_fake_remotes_small_missing "echo")"
   assert_equals \
-    "DISTCC_HOSTS=localhost:5678/8,lzo" \
+    "DISTCC_HOSTS=$localhost_ip:5678/8,lzo" \
     "$(execution_two_fake_remotes_small_missing \
       "./no_job_arg_entry.sh env | grep DISTCC")"
 }
@@ -202,7 +215,7 @@ execution_two_fake_remotes_big_missing() {
 test_execution_two_fake_remotes_big_missing() {
   assert_equals "-j 1" "$(execution_two_fake_remotes_big_missing "echo")"
   assert_equals \
-    "DISTCC_HOSTS=localhost:1234/1,lzo" \
+    "DISTCC_HOSTS=$localhost_ip:1234/1,lzo" \
     "$(execution_two_fake_remotes_big_missing \
       "./no_job_arg_entry.sh env | grep DISTCC")"
 }

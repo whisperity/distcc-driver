@@ -186,11 +186,15 @@
 #                               user's login name.
 #
 #     SSH_PORT                  The port where the remote server's SSH daemon,
-#                               sshd(1), is listening for connections.
+#                               sshd(8), is listening for connections.
 #                               Defaults to nothing, in which case the ssh(1)
 #                               client will default it to the "Port" set in the
 #                               SSH configuration file, or use the global
 #                               default 22.
+#
+#   Support for SSH_HOSTs is conditional on having the ssh(1) client installed,
+#   and successful execution depends on server-side configuration as well.
+#   Please see the documentation in 'lib/ssh.sh' for details.
 #
 #
 # EXIT CODES

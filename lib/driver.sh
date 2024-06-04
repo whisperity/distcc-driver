@@ -64,6 +64,7 @@ esac
 
 _DCCSH_HAS_MISSING_TOOLS=0
 _DCCSH_HAS_SSH_SUPPORT=0
+_DCCSH_ALREADY_WARNED_ABOUT_LACK_OF_SSH=0
 
 function _check_command {
   # This script depends on some usually available tools for helper calculations.
@@ -84,6 +85,7 @@ function check_commands {
   _check_command free
   _check_command grep
   _check_command head
+  _check_command ip
   _check_command mktemp
   _check_command nproc
   _check_command rm
@@ -94,6 +96,8 @@ function check_commands {
   if command -v ssh >/dev/null; then
     # shellcheck disable=SC1091
     source "$(dirname -- "${BASH_SOURCE[0]}")/ssh.sh"
+
+    check_commands_ssh
   fi
 
   return "$_DCCSH_HAS_MISSING_TOOLS"
@@ -239,6 +243,14 @@ function get_hostname_from_hostspec {
   echo "$hostname"
 }
 
+function loopback_address {
+  # Returns the address of the loopback device 'lo'.
+
+  # Return value.
+  ip address show lo \
+    | grep -Po 'inet \K.*?(?=[/ ])'
+}
+
 function parse_tcp_hostspec {
   # Parses an AUTO_HOST_SPEC which is according to the TCP_HOST grammar.
   # Returns the single '/'-separated split specification fields.
@@ -249,6 +261,12 @@ function parse_tcp_hostspec {
   local hostname
   hostname="$(get_hostname_from_hostspec "$hostspec")"
   hostspec="${hostspec/"$hostname"/}"
+
+  if [ "$hostname" == "localhost" ]; then
+    # "localhost", as a hostname, has a special meaning for DistCC ("do not
+    # distribute"), it must be replaced with the actual loopback address.
+    hostname="$(loopback_address)"
+  fi
 
   local -i job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
   local -i stat_port="$_DCCSH_DEFAULT_STATS_PORT"
@@ -280,9 +298,6 @@ function parse_tcp_hostspec {
   # Return value.
   array '/' "tcp" "$hostname" "$job_port" "$stat_port"
 }
-
-
-_DCCSH_ALREADY_WARNED_ABOUT_LACK_OF_SSH=0
 
 function parse_distcc_auto_hosts {
   # Parses the contents of the first argument ($1) according to the
@@ -348,10 +363,10 @@ function unique_host_specifications {
   # Returns a semicolon (';') separated array of host specifications.
 
   # Return value.
-  echo -e "$(array '\n' "$@")" | \
-    awk '!(line_seen[ $0 ]++)' | \
-    head -c -1 | \
-    tr '\n' ';'
+  echo -e "$(array '\n' "$@")" \
+    | awk '!(line_seen[ $0 ]++)' \
+    | head -c -1 \
+    | tr '\n' ';'
 }
 
 
@@ -395,9 +410,11 @@ function fetch_worker_capacity {
       log "NOTE" "The actual query was sent to" \
         "\"[$protocol://$hostname]:$stat_port\"!"
     fi
+
+    debug -e "Raw DistCC --stats response:\n${stat_response}"
+
     return 1
   fi
-  # debug -e "Raw DistCC --stats response:\n${stat_response}"
 
   local -i dcc_max_kids
   dcc_max_kids="$(echo "$stat_response" | grep "dcc_max_kids" \
@@ -411,8 +428,8 @@ function fetch_worker_capacity {
 
   # (Unfortunately, Bash's $(( )) does *NOT* support floats. Zsh would.)
   local dcc_load_average
-  dcc_load_average="$(echo "${dcc_loads[@]}" | \
-    awk '{ print ($1 + $2 + $3) / 3 }')"
+  dcc_load_average="$(echo "${dcc_loads[@]}" \
+    | awk '{ print ($1 + $2 + $3) / 3 }')"
   debug "  - Load avg: $dcc_load_average"
 
   # FIXME: This is not implemented yet, only a proposal.
@@ -494,7 +511,12 @@ function transform_non_trivial_worker_hosts {
         fi
 
         debug "Transforming SSH host: $hostspec ..."
-        hostspec="$(act_upon_transform_ssh_hostspec "$hostspec")"
+        hostspec="$(transform_ssh_hostspec "$hostspec")"
+
+        if [ -z "$hostspec" ]; then
+          log "ERROR" "Failed to establish SSH worker: $original_hostspec"
+          continue
+        fi
         ;;
     esac
 
@@ -531,8 +553,6 @@ function get_raw_worker_specifications {
     <<< "$(unique_host_specifications "${parsed_hosts[@]}")"
   IFS=';' read -ra parsed_hosts \
     <<< "$(transform_non_trivial_worker_hosts "${parsed_hosts[@]}")"
-
-  echo -e "Dummy transformed hostspec:\n\t${parsed_hosts[*]}" >&2
 
   # Return value.
   fetch_worker_capacities "${parsed_hosts[@]}"
@@ -667,13 +687,13 @@ function transform_workers_by_priority {
   # RAM (if reported) anyway.
 
   # Return value.
-  echo -e "$(array '\n' "$@")" | \
-    sort -t '/' \
+  echo -e "$(array '\n' "$@")" \
+    | sort -t '/' \
       -k5nr \
       -k6n \
-      -k7nr | \
-    head -c -1 | \
-    tr '\n' ';'
+      -k7nr \
+    | head -c -1 \
+    | tr '\n' ';'
 }
 
 

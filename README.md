@@ -94,3 +94,78 @@ build tool, the following exit codes for error conditions:
 |:---------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `96`      | Indicates an issue with the configuration of the execution environment, such as the emptiness of a mandatory configuration variable, or the lack of required system tools preventing normal function. |
 | `97`      | There is not enough system memory (RAM) available on the local computer to run the requested number of local compilations, and no remote workers were available.                                      |
+
+
+Connecting to servers using [SSH](http://en.wikipedia.org/wiki/Secure_Shell) tunnels
+------------------------------------------------------------------------------------
+
+Support for [`SSH_HOST`s](#host-specification) is conditional on having the [_ssh(1)_](http://en.wikipedia.org/wiki/Secure_Shell) client installed, and successful execution depends on server-side configuration as well.
+
+In most cases, the remote _distccd(1)_ servers are available through the local network and can be used via raw TCP communication to dispatch jobs.
+This is the preferred approach, as this allows for doing the work with the least overhead (communication, compression, etc.).
+
+In certain scenarios, however, the "naïve" or "raw" DistCC ports might not be available directly from the client: such is often the case if the servers are in a separate network zone, location, data-centre, than the client machine &emdash; or firewalls could be purposefully or by accident restricting access.
+In this case, tunnelling over _ssh(1)_ can be a feasible solution to expose the ports on the local machine for _distcc(1)_ to consume, without having to reconfigure the network.
+
+_distcc(1)_ natively supports an _"SSH Mode"_ and connects to remote servers built-in, but that mode's method is to spawn the _distccd(1)_ **server** using the connection, and communicates with the server via a pipe.
+
+**ℹ️ Note** that _SSH tunnelling_, as done by this script, is purposefully **DIFFERENṪ** from _distcc(1)_'s aforementioned _"SSH tunnelling"_ mode.
+
+**ℹ️📖 From `man distcc`:**
+
+> For SSH connections, `distccd` must be installed, but should **not** be listening for connections.
+
+This is not always feasible, as it would spawn a server under the name of the user connecting, which may not have the necessary privileges, the running server would not be capable of locking down the total job count across multiple users (i.e., two users spawning two `-j $(nproc)` servers and saturating them fully would overload the remote machine), and might not even have the right set of compilers available.
+This is especially the case if the remote servers are [running _distccd(1)_ in a containerised environment](http://github.com/whisperity/DistCC-Docker).
+
+
+### Setting up SSH tunnels
+
+The `distcc-driver` script supports a different approach, which **REQUIRES** a _distccd(1)_ (and _sshd(8)_) servers to be running on the remote machine, and the existence of the _ssh(1)_ client locally.
+The remote server must allow the creation of tunnels, especially `AllowTcpForwarding` should be set to `yes`, `all`, or `local`, see _sshd_config(5)_.
+Naturally, the _distccd(1)_ server's "job" (main) and "stats" port must be accessible from the _sshd(8)_ server, i.e., if it is running in a containerised namespace, it needs to be exposed thereto.
+
+Specifying an [`SSH_HOST`](#host-specification) will instruct the script to transform the provided `SSH_HOST` internally to a (local machine) `TCP_HOST` that points to a tunnel.
+The local ports of the tunnel are selected **randomly**.
+This tunnel is **kept alive** throughout the entire execution of the script, and destroyed after.
+In case the script fails to establish the tunnel, or the tunnel is created but the remote server does not communicate appropriately, the host is eliminated from the list of potential workers.
+
+Note that from the eventually called _distcc(1)_ clients' purview, the tunnelled connections will appear as if compiling on a server running on the local machine (usually with the host IP address `127.0.0.1` or `[::1]`).
+Importantly, _distccmon-text(1)_ and similar tools will show the _loopback_ address under the remote worker's "name".
+
+
+### Specifying and customising SSH hosts
+
+The _"hostname"_ part of the [SSH_HOST](#host-specification) might be a trivial hostname `example.com`, or one infixed between a `username@` and/or a `:port` number.
+The value is understood as passed to _ssh(1)_, similarly to how a "natural" remote terminal connection is made.
+As such, the provided hostname component might also be a user-customised `Host` entry's name, see _ssh_config(5)_ for details.
+
+The tunnels are created as if by executing:
+
+```bash
+ssh \
+  -L random-port-1:localhost:DISTCC_PORT \
+  -L random-port-2:localhost:STATS_PORT \
+  \
+  (... additional necessary keep-alive options ...) \
+  (... additional internally required detail options ...) \
+  (... additional options that disable unneeded features ...) \
+  \
+  SSH_HOST
+```
+
+In certain scenarios, such as if the authentication to the machine is
+done via [_PKI_ or identitfy files](http://en.wikipedia.org/wiki/Public-key_cryptography), and the connection should use a key that is not the default for the **CURRENT** user (e.g., because the entire team is using a dedicated _"CI"_ or _"compiler"_ user on the servers), then this customisation **MUST** be done in the SSH configuration file at `~/.ssh/config`.
+
+For example, you might use an `ssh://worker-1` [host specification](#host-specification) with the following _SSH config_:
+
+```ssh-config
+Host worker-1
+  HostName compiler-machine-1234.internal.mycompany.com
+  User cpp-compiler-team
+  IdentityFile ~/.ssh/compiler_team_key
+  # ... Additional options such as 'Port' (SSH server port), and other
+  # non-randomised 'LocalForward's
+```
+
+It is **recommended** to set the server up with key-based authentication instead of requiring the typing in of the remote user's password every time, **and** to run the script in an environment where an _ssh-agent(1)_ is available in order to lessen the number of times the potentially password-protected key has to be unlocked over and over again.

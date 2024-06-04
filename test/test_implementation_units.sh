@@ -3,6 +3,20 @@
 
 
 source "../lib/driver.sh"
+source "../lib/ssh.sh"
+
+
+declare localhost_ip=""
+
+setup_suite() {
+  localhost_ip="$(ip address show dev lo \
+    | grep -Po 'inet \K.*?(?=[/ ])')"
+  echo "Assuming \"localhost\" is: \"$localhost_ip\" ..." >&2
+}
+
+teardown_suite() {
+  unset localhost_ip
+}
 
 
 test_parse_distcc_auto_hosts() {
@@ -40,19 +54,19 @@ test_parse_distcc_auto_hosts() {
     "$(parse_distcc_auto_hosts "unknown://example.com")"
 
   assert_equals \
-    "tcp/localhost/3632/3633;ssh/localhost/3632/3633" \
+    "tcp/$localhost_ip/3632/3633;ssh/localhost/3632/3633" \
     "$(parse_distcc_auto_hosts "localhost ssh://localhost")"
 
   assert_equals \
-    "tcp/localhost/3632/3633;ssh/user@localhost:2222/3632/3633" \
+    "tcp/$localhost_ip/3632/3633;ssh/user@localhost:2222/3632/3633" \
     "$(parse_distcc_auto_hosts "localhost ssh://user@localhost:2222")"
 
   assert_equals \
-    "tcp/localhost/3632/3633;ssh/user@localhost:2222/1234/3633" \
+    "tcp/$localhost_ip/3632/3633;ssh/user@localhost:2222/1234/3633" \
     "$(parse_distcc_auto_hosts "localhost ssh://user@localhost:2222/1234")"
 
   assert_equals \
-    "tcp/localhost/3632/3633;ssh/user@localhost:2222/1234/5678" \
+    "tcp/$localhost_ip/3632/3633;ssh/user@localhost:2222/1234/5678" \
     "$(parse_distcc_auto_hosts "localhost ssh://user@localhost:2222/1234/5678")"
 }
 
