@@ -39,7 +39,7 @@
 
 function log {
   # Emits a log message to the standard error.
-  local severity="$1"
+  local -r severity="$1"
   shift 1
 
   echo "distcc-driver - $severity: $*" >&2
@@ -120,10 +120,10 @@ function debug {
     return
   fi
 
-  local prev_debug_skipped_newline="${_DCCSH_ECHO_N:=0}"
-  local caller_func="${FUNCNAME[1]}"
-  # local file="${BASH_SOURCE[1]}"
-  local line="${BASH_LINENO[0]}"
+  local -ri prev_debug_skipped_newline="${_DCCSH_ECHO_N:=0}"
+  local -r caller_func="${FUNCNAME[1]}"
+  # local -r file="${BASH_SOURCE[1]}"
+  local -ri line="${BASH_LINENO[0]}"
   _DCCSH_ECHO_N=0
   if [ "$1" == "-n" ]; then
     _DCCSH_ECHO_N=1
@@ -148,8 +148,8 @@ function array {
   #
   # Adapted from http://stackoverflow.com/a/17841619.
 
-  local delimiter=${1-}
-  local first=${2-}
+  local -r delimiter=${1-}
+  local -r first=${2-}
 
   if ! shift 2; then
     return 0
@@ -217,7 +217,7 @@ function get_hostname_from_hostspec {
   # Retrieves either an ALPHANUMERIC_HOSTNAME, an IPv4_ADDRESS, or an
   # IPv6_ADDRESS from the specified partial hostspec line in $1.
 
-  local hostspec="$1"
+  local -r hostspec="$1"
 
   local hostname
   local match_ipv4
@@ -244,14 +244,14 @@ function parse_tcp_hostspec {
   # Returns the single '/'-separated split specification fields.
 
   local hostspec="$1"
-  local original_hostspec="$hostspec"
+  local -r original_hostspec="$hostspec"
 
   local hostname
   hostname="$(get_hostname_from_hostspec "$hostspec")"
   hostspec="${hostspec/"$hostname"/}"
 
-  local job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
-  local stat_port="$_DCCSH_DEFAULT_STATS_PORT"
+  local -i job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
+  local -i stat_port="$_DCCSH_DEFAULT_STATS_PORT"
   local match_port
   match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
   if [ -n "$match_port" ]; then
@@ -291,7 +291,7 @@ function parse_distcc_auto_hosts {
   # in the following format: a semicolon (';') separated array of
   # "PROTOCOL/HOST/PORT/STAT_PORT" entries.
 
-  local hosts=()
+  local -a hosts=()
 
   for hostspec in $1; do
     local original_hostspec="$hostspec"
@@ -364,20 +364,20 @@ function fetch_worker_capacity {
   # Returns the worker capacity information: "THREAD_COUNT/LOAD_AVG/FREE_MEM".
 
   local hostspec="$1"
-  local original_hostspec="$2"
+  local -r original_hostspec="$2"
   debug "Querying host capacity: $original_hostspec ..."
 
-  local original_hostspec_fields
-  local hostspec_fields
+  local -a original_hostspec_fields
+  local -a hostspec_fields
   IFS='/' read -ra original_hostspec_fields <<< "$original_hostspec"
   IFS='/' read -ra hostspec_fields <<< "$hostspec"
 
-  local protocol="${hostspec_fields[0]}"
-  local original_protocol="${original_hostspec_fields[0]}"
-  local hostname="${hostspec_fields[1]}"
-  local original_hostname="${original_hostspec_fields[1]}"
-  local stat_port="${hostspec_fields[3]}"
-  local original_stat_port="${original_hostspec_fields[3]}"
+  local -r protocol="${hostspec_fields[0]}"
+  local -r original_protocol="${original_hostspec_fields[0]}"
+  local -r hostname="${hostspec_fields[1]}"
+  local -r original_hostname="${original_hostspec_fields[1]}"
+  local -r stat_port="${hostspec_fields[3]}"
+  local -r original_stat_port="${original_hostspec_fields[3]}"
 
   local stat_response
   stat_response="$(curl "$hostname:$stat_port" \
@@ -399,7 +399,7 @@ function fetch_worker_capacity {
   fi
   # debug -e "Raw DistCC --stats response:\n${stat_response}"
 
-  local dcc_max_kids
+  local -i dcc_max_kids
   dcc_max_kids="$(echo "$stat_response" | grep "dcc_max_kids" \
     | cut -d ' ' -f 2)"
   debug "  - Threads: $dcc_max_kids"
@@ -417,7 +417,7 @@ function fetch_worker_capacity {
 
   # FIXME: This is not implemented yet, only a proposal.
   # (See http://github.com/distcc/distcc/issues/521 for details.)
-  local dcc_free_mem="-1"
+  local -i dcc_free_mem="-1"
   # debug "  - Memory: $dcc_free_mem"
 
   # Return value.
@@ -431,11 +431,11 @@ function fetch_worker_capacities {
   # information for each array element, in the same semicolon (';') separated
   # format as with parse_distcc_auto_hosts.
 
-  local workers=()
+  local -a workers=()
 
   for hostspec in "$@"; do
-    local hostspec_and_original_hostspec
-    local hostspec_fields
+    local -a hostspec_and_original_hostspec
+    local -a hostspec_fields
     local original_hostspec
     IFS='=' read -ra hostspec_and_original_hostspec <<< "$hostspec"
     if [ "${#hostspec_and_original_hostspec[@]}" -eq 2 ]; then
@@ -476,11 +476,11 @@ function transform_non_trivial_worker_hosts {
   # TRANSFORMED_HOST_SPECIFICATION is the same 4-tuple of fields but guaranteed
   # to be trivially actionable (aka. it is a pure TCP connection).
 
-  local hosts=()
+  local -a hosts=()
 
   for hostspec in "$@"; do
     local original_hostspec="$hostspec"
-    local hostspec_fields
+    local -a hostspec_fields
     IFS='/' read -ra hostspec_fields <<< "$hostspec"
 
     local protocol="${hostspec_fields[0]}"
@@ -525,7 +525,7 @@ function get_raw_worker_specifications {
   # "PROTOCOL/HOST/PORT/STAT_PORT/THREAD_COUNT/LOAD_AVG/FREE_MEM"
   # entries.
 
-  local parsed_hosts
+  local -a parsed_hosts
   IFS=';' read -ra parsed_hosts <<< "$(parse_distcc_auto_hosts "$1")"
   IFS=';' read -ra parsed_hosts \
     <<< "$(unique_host_specifications "${parsed_hosts[@]}")"
@@ -544,7 +544,7 @@ function scale_worker_job_counts {
   # queried worker in $@ (the variadic input argument), based on the workers'
   # capacities and the expected per-job memory use value passed under $1.
 
-  local requested_per_job_mem="$1"
+  local -ri requested_per_job_mem="$1"
   shift 1
 
   if [ "$requested_per_job_mem" -le 0 ]; then
@@ -553,13 +553,13 @@ function scale_worker_job_counts {
     return
   fi
 
-  local workers=()
+  local -a workers=()
 
   for worker_specification in "$@"; do
-    local worker_specification_fields
+    local -a worker_specification_fields
     IFS='/' read -ra worker_specification_fields <<< "$worker_specification"
 
-    local available_memory="${worker_specification_fields[6]}"
+    local -i available_memory="${worker_specification_fields[6]}"
     if [ "$available_memory" == "-1" ]; then
       # If no memory information is available about the worker, assume that it
       # will be able to handle the number of jobs it exposes that it could
@@ -569,8 +569,9 @@ function scale_worker_job_counts {
       continue
     fi
 
-    local thread_count="${worker_specification_fields[4]}"
-    local scaled_thread_count="$(( available_memory / requested_per_job_mem ))"
+    local -i thread_count="${worker_specification_fields[4]}"
+    local -i \
+      scaled_thread_count="$(( available_memory / requested_per_job_mem ))"
     if [ "$scaled_thread_count" -eq 0 ]; then
       debug "Skipping worker (available memory: $available_memory MiB):" \
         "$protocol://$hostname:$job_port"
@@ -578,7 +579,7 @@ function scale_worker_job_counts {
     elif [ "$scaled_thread_count" -lt "$thread_count" ]; then
       local protocol="${worker_specification_fields[0]}"
       local hostname="${worker_specification_fields[1]}"
-      local job_port="${worker_specification_fields[2]}"
+      local -i job_port="${worker_specification_fields[2]}"
       debug "Scaling down worker \"$protocol://$hostname:$job_port\"" \
         "(available memory: $available_memory MiB):" \
         "$thread_count -> $scaled_thread_count"
@@ -598,13 +599,13 @@ function sum_worker_job_counts {
   # on the worker specification provided under the variadic input $@.
   # Returns a single integer number.
 
-  local remote_job_count=0
+  local -i remote_job_count=0
 
   for worker_specification in "$@"; do
-    local worker_specification_fields
+    local -a worker_specification_fields
     IFS='/' read -ra worker_specification_fields <<< "$worker_specification"
 
-    local worker_job_count="${worker_specification_fields[4]}"
+    local -i worker_job_count="${worker_specification_fields[4]}"
     remote_job_count="$(( remote_job_count + worker_job_count ))"
   done
 
@@ -620,9 +621,9 @@ function scale_local_job_count {
   # Returns the number of jobs to schedule, which might be "0" if no local work
   # should or could be done.
 
-  local local_jobs="$1"
-  local requested_per_job_mem="$2"
-  local available_memory="$3"
+  local -i local_jobs="$1"
+  local -ri requested_per_job_mem="$2"
+  local -ri available_memory="$3"
   if [ "$local_jobs" -eq 0 ] \
       || [ "$requested_per_job_mem" -le 0 ] \
       || [ "$available_memory" -le 0 ]; then
@@ -631,7 +632,8 @@ function scale_local_job_count {
     return
   fi
 
-  local scaled_thread_count="$(( available_memory / requested_per_job_mem ))"
+  local -ri \
+    scaled_thread_count="$(( available_memory / requested_per_job_mem ))"
   if [ "$scaled_thread_count" -eq 0 ]; then
     debug "Skipping local jobs (not enough RAM)"
     local_jobs="0"
@@ -682,10 +684,10 @@ function assemble_distcc_hosts {
   #
   # Returns a single string that should be the environment variable.
 
-  local distcc_hosts=()
+  local -a distcc_hosts=()
 
-  local localhost_compilers="$1"
-  local localhost_preprocessors="$2"
+  local -ri localhost_compilers="$1"
+  local -ri localhost_preprocessors="$2"
   shift 2
 
   if [ "$localhost_compilers" -gt 0 ]; then
@@ -697,12 +699,12 @@ function assemble_distcc_hosts {
   fi
 
   for worker_specification in "$@"; do
-    local worker_specification_fields
+    local -a worker_specification_fields
     IFS='/' read -ra worker_specification_fields <<< "$worker_specification"
 
     local hostname="${worker_specification_fields[1]}"
-    local job_port="${worker_specification_fields[2]}"
-    local thread_count="${worker_specification_fields[4]}"
+    local -i job_port="${worker_specification_fields[2]}"
+    local -i thread_count="${worker_specification_fields[4]}"
 
     distcc_hosts+=("$hostname:$job_port/$thread_count,lzo")
   done
@@ -736,8 +738,8 @@ function drive_distcc {
   # environment variable. The rest of the variadic input parameters ($@) specify
   # the command to execute.
 
-  local build_system_jobs="$1"
-  local distcc_hosts_str="$2"
+  local -ri build_system_jobs="$1"
+  local -r distcc_hosts_str="$2"
   shift 2
 
   debug "Executing command: $*"
@@ -749,6 +751,7 @@ function drive_distcc {
     --unset="DISTCC_AUTO_EARLY_LOCAL_JOBS" \
     --unset="DISTCC_AUTO_FALLBACK_LOCAL_JOBS" \
     --unset="DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS" \
+    --unset="DCCSH_TEMP" \
     CCACHE_PREFIX="distcc" \
     DISTCC_HOSTS="$distcc_hosts_str" \
       "$@" \
@@ -799,7 +802,7 @@ function distcc_driver {
 
 
   # Parse user configuration of hosts and query worker capabilities.
-  local workers
+  local -a workers
   IFS=';' read -ra workers \
     <<< "$(get_raw_worker_specifications "${DISTCC_AUTO_HOSTS:=}")"
 
@@ -807,7 +810,7 @@ function distcc_driver {
   # Scale workers' known specification to available capacity, if needed.
   # Then, select the "best" workers (with the most available capacity) to be
   # saturated first.
-  local requested_per_job_mem
+  local -i requested_per_job_mem
   if [ "$DISTCC_AUTO_COMPILER_MEMORY" == "0" ]; then
     debug "DISTCC_AUTO_COMPILER_MEMORY == \"0\": Skip scaling workers"
   else
@@ -816,7 +819,7 @@ function distcc_driver {
       <<< "$(scale_worker_job_counts "$requested_per_job_mem" "${workers[@]}")"
   fi
 
-  local num_remotes="${#workers[@]}"
+  local -ri num_remotes="${#workers[@]}"
 
   if [ "$num_remotes" -gt 0 ]; then
     IFS=';' read -ra workers \
@@ -830,7 +833,7 @@ function distcc_driver {
 
 
   # Decide the number of parallel jobs to run completely locally.
-  local requested_local_jobs
+  local -i requested_local_jobs
   if [ "$num_remotes" -ne 0 ]; then
     requested_local_jobs="${DISTCC_AUTO_EARLY_LOCAL_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_EARLY_LOCAL_JOBS"}"
     debug "Requesting $requested_local_jobs local jobs ..." \
@@ -844,7 +847,7 @@ function distcc_driver {
   if [ "$requested_local_jobs" -eq 0 ]; then
     debug "Local job count == 0: Skip scaling local"
   else
-    local available_local_memory
+    local -i available_local_memory
     available_local_memory="$(free -m | grep "^Mem:" | awk '{ print $7 }')"
     debug "  - \"Available\" memory: $available_local_memory MiB"
 
@@ -864,9 +867,9 @@ function distcc_driver {
     return 97
   fi
 
-  local num_remote_jobs=0
-  local preprocessor_saturation_jobs=0
-  local total_job_count=0
+  local -i num_remote_jobs=0
+  local -i preprocessor_saturation_jobs=0
+  local -i total_job_count=0
   if [ "$num_remotes" -ne 0 ]; then
     num_remote_jobs="$(sum_worker_job_counts "${workers[@]}")"
     total_job_count="$(( num_remote_jobs + requested_local_jobs ))"
@@ -880,7 +883,8 @@ function distcc_driver {
     exit 97
   fi
 
-  local preprocessor_saturation_jobs="${DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS"}"
+  local -i \
+    preprocessor_saturation_jobs="${DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS:-"$_DCCSH_DEFAULT_DISTCC_AUTO_PREPROCESSOR_SATURATION_JOBS"}"
   if [ "$preprocessor_saturation_jobs" -eq 0 ]; then
     debug "Preprocessor saturation job count == 0: Skip setting up"
   elif [ "$num_remotes" -eq 0 ]; then
@@ -913,7 +917,7 @@ function distcc_driver {
 
   # Fire away the user's requested command.
   drive_distcc "$total_job_count" "${distcc_hosts[@]}" "$@"
-  local main_return_code=$?
+  local -ri main_return_code=$?
 
 
 

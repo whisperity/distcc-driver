@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 
-source "../distcc-driver-lib.sh"
+source "../lib/driver.sh"
 
 
 test_array() {

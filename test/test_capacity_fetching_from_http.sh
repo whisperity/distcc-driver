@@ -3,7 +3,7 @@
 
 
 source "./fake_http.sh"
-source "../distcc-driver-lib.sh"
+source "../lib/driver.sh"
 
 
 test_fetch_worker_capacity() {

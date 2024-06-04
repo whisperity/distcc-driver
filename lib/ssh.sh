@@ -31,7 +31,7 @@ function parse_ssh_hostspec {
   # "PROTOCOL/[USERNAME@]HOSTNAME[:PORT]/
 
   local hostspec="$1"
-  local original_hostspec="$hostspec"
+  local -r original_hostspec="$hostspec"
 
   local ssh_full_host
   ssh_full_host="$(echo "$hostspec" | grep -Eo '^([^/]*)')"
@@ -54,7 +54,7 @@ function parse_ssh_hostspec {
     debug "  - User: $username"
   fi
 
-  local ssh_port
+  local -i ssh_port
   local match_port
   match_port="$(echo "$hostspec" | grep -Eo '^:[0-9]{1,5}' | sed 's/^://')"
   if [ -n "$match_port" ]; then
@@ -65,8 +65,8 @@ function parse_ssh_hostspec {
     debug "  - SSH port: $ssh_port"
   fi
 
-  local job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
-  local stat_port="$_DCCSH_DEFAULT_STATS_PORT"
+  local -i job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
+  local -i stat_port="$_DCCSH_DEFAULT_STATS_PORT"
   match_port="$(echo "$hostspec" | grep -Eo '^/[0-9]{1,5}' | sed 's/^\///')"
   if [ -n "$match_port" ]; then
     # If the match-port matched **once** with '/' as the prefix, it MUST be the
