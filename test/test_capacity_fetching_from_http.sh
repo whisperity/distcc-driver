@@ -19,6 +19,11 @@ test_fetch_worker_capacity() {
   assert_equals \
     "8/2/-1" \
     "$(fetch_worker_capacity "tcp/localhost/0/$port" "tcp/localhost/0/$port")"
+
+  _serve_file_http "inputs/basic_stats/with_dcc_free_mem.txt" "$port"
+  assert_equals \
+    "8/2/16384" \
+    "$(fetch_worker_capacity "tcp/localhost/0/$port" "tcp/localhost/0/$port")"
 }
 
 test_fetch_worker_capacity_invalid() {
@@ -48,12 +53,18 @@ test_fetch_worker_capacities() {
   port3="$(_getport)"
   _serve_file_http "inputs/basic_stats/invalid_response.txt" "$port3"
 
+  local port4
+  port4="$(_getport)"
+  _serve_file_http "inputs/basic_stats/with_dcc_free_mem.txt" "$port4"
+
   assert_equals \
-    "tcp/localhost/1/$port1/1/7.5/-1;tcp/localhost/2/$port2/8/2/-1" \
+    "tcp/localhost/1/$port1/1/7.5/-1;tcp/localhost/2/$port2/8/2/-1;tcp/localhost/4/$port4/8/2/16384" \
     "$(fetch_worker_capacities \
       "tcp/localhost/1/$port1" \
       "tcp/localhost/2/$port2" \
-      "tcp/localhost/3/$port3")"
+      "tcp/localhost/3/$port3" \
+      "tcp/localhost/4/$port4" \
+      )"
 }
 
 test_fetch_worker_capacities_with_original_hostspec() {

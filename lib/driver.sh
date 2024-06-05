@@ -436,10 +436,22 @@ function fetch_worker_capacity {
     | awk '{ print ($1 + $2 + $3) / 3 }')"
   debug "  - Load avg: $dcc_load_average"
 
-  # FIXME: This is not implemented yet, only a proposal.
-  # (See http://github.com/distcc/distcc/issues/521 for details.)
-  local -i dcc_free_mem="-1"
-  # debug "  - Memory: $dcc_free_mem"
+  # Understand the "dcc_free_mem" line in the output **if it exists**, otherwise
+  # default to "-1" (for later sorting purposes,
+  # see transform_workers_by_priority()).
+  #
+  # "dcc_free_mem" might not be implemented universally, as it is a
+  # recent (Jun 2024) proposal, see http://github.com/distcc/distcc/issues/521.
+  local -i dcc_free_mem
+  local dcc_free_mem_line
+  dcc_free_mem_line="$(echo "$stat_response" | grep "dcc_free_mem")"
+  # shellcheck disable=SC2181
+  if [ $? -eq 0 ]; then
+    dcc_free_mem="$(echo "$dcc_free_mem_line" | cut -d ' ' -f 2)"
+    debug "  - Memory: $dcc_free_mem MiB"
+  else
+    dcc_free_mem="-1"
+  fi
 
   # Return value.
   array '/' "$dcc_max_kids" "$dcc_load_average" "$dcc_free_mem"
