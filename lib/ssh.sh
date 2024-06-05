@@ -333,7 +333,6 @@ function transform_ssh_hostspec {
     env \
         ssh \
           "${ssh_client_args_with_ports[@]}"
-    sleep 5
 
     local -i ssh_pid=0
     ssh_pid="$(pgrep -f \
@@ -351,7 +350,7 @@ function transform_ssh_hostspec {
     retries+=1
   done
 
-  if [ "$retries" -ge "$_DCCSH_SSH_RETRY_LIMIT" ]; then
+  if [ "$retries" -gt "$_DCCSH_SSH_RETRY_LIMIT" ]; then
     log "ERROR" "Failed to establish SSH connection with tunnels to" \
       "\"$hostspec\" after $_DCCSH_SSH_RETRY_LIMIT retries!"
     return 2
@@ -377,7 +376,7 @@ EOF
 
 
 function cleanup_ssh {
-  # Kills ssh(1) processes created by act_upon_transform_ssh_hostspec().
+  # Kills ssh(1) processes created by transform_ssh_hostspec().
 
   if [ ! -f "$(ssh_tunnel_pidfile)" ]; then
     return

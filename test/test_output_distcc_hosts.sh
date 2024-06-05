@@ -19,21 +19,13 @@ teardown_suite() {
 }
 
 
-execution_no_command() {
-  distcc_build
-}
-
 test_execution_no_command() {
-  assert_status_code 96 execution_no_command
+  assert_status_code 96 "distcc_build"
 }
 
-
-execution_no_auto_hosts() {
-  distcc_build "echo"
-}
 
 test_execution_no_auto_hosts() {
-  assert_status_code 96 execution_no_auto_hosts
+  assert_status_code 96 "distcc_build \"echo\""
 }
 
 
@@ -46,11 +38,15 @@ execution_local_only() {
 }
 
 test_execution_local_only() {
-  assert_status_code 0 "execution_local_only \"echo\""
-  assert_equals "-j 4" "$(execution_local_only "echo")"
+  local output
+  output="$(execution_local_only "echo")"
+  local -ri exit_code=$?
+
+  assert_equals 0 "$exit_code" "Expected success (0) exit code."
+  assert_equals "-j 4" "$output"
 }
 
-test_execution_supports_driving_through_ccache() {
+test_execution_local_only_sets_ccache_prefix() {
   assert_equals \
     "CCACHE_PREFIX=distcc" \
     "$(execution_local_only "./no_job_arg_entry.sh env | grep CCACHE_PREFIX")"
@@ -65,8 +61,12 @@ execution_local_only_with_preprocessor() {
 }
 
 test_execution_local_only_with_preprocessor() {
-  assert_status_code 0 execution_local_only_with_preprocessor
-  assert_equals "-j 4" "$(execution_local_only_with_preprocessor)"
+  local output
+  output="$(execution_local_only_with_preprocessor)"
+  local -ri exit_code=$?
+
+  assert_equals 0 "$exit_code" "Expected success (0) exit code."
+  assert_equals "-j 4" "$output"
 }
 
 

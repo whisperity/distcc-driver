@@ -1,6 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 
+
 FAKE_DISTCC_RESPONSE="$(cat <<EOF
 HTTP/1.1 200 OK
 Content-Type: text/plain
@@ -39,8 +40,24 @@ dcc_free_space 0 MB
 EOF
 )"
 
+
 echo "$(hostname): Starting sshd ..." >&2
 eval "$(which sshd)" -p 2222
+
+
+raw_server() {
+  while true; do
+    sleep 1
+
+    echo "$(hostname): Starting raw \"Hello, World!\" server ..." >&2
+    echo "\"Hello, World!\" from: $(hostname)" \
+      | netcat -Nl 6362 \
+      &
+
+    wait $!
+    echo "$(hostname): Raw \"Hello, World!\" server exited!" >&2
+  done
+}
 
 
 fake_distcc_stats_server() {
@@ -57,19 +74,6 @@ fake_distcc_stats_server() {
   done
 }
 
-raw_server() {
-  while true; do
-    sleep 1
-
-    echo "$(hostname): Starting raw \"Hello, World!\" server ..." >&2
-    echo "\"Hello, World!\" from: $(hostname)" \
-      | netcat -Nl 6362 \
-      &
-
-    wait $!
-    echo "$(hostname): Raw \"Hello, World!\" server exited!" >&2
-  done
-}
 
 while true; do
   echo "$(hostname): Starting webservers ..." >&2

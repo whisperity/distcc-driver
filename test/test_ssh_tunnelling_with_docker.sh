@@ -13,7 +13,7 @@ _no_command() {
   return 1
 }
 
-skip_if "_no_command docker || _no_command netcat _no_command ssh" "test"
+skip_if "_no_command docker || _no_command netcat || _no_command ssh" "test"
 
 
 IMAGE="distcc-driver-ssh-test"
@@ -23,7 +23,7 @@ setup_suite() {
   # Build and start a Docker container.
   docker build \
     -t "$IMAGE" \
-    "$(pwd)/ssh_tunnel_dummy/"
+    "$(pwd)/ssh_tunnel_test_docker/"
 
   docker run \
     --detach \
@@ -40,7 +40,7 @@ teardown_suite() {
   # Clean up the Docker artefacts.
   docker kill "$CONTAINER"
   docker rm "$CONTAINER"
-  # docker rmi "$IMAGE"
+  docker rmi "$IMAGE"
 }
 
 
