@@ -138,7 +138,7 @@
 #   The contents of the DISTCC_AUTO_HOSTS environment variable is the primary
 #   configuration option that **MUST** be set by the user prior to using this
 #   script.
-#   The host list is a whitespace separated list of individual worker host
+#   The host list is a white-space separated list of individual worker host
 #   specification entries, which are composed of (usually) a host name and,
 #   optionally, the remote server's port number.
 #

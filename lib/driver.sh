@@ -935,7 +935,7 @@ function distcc_driver {
     log "INFO" "  - $requested_local_jobs local compilations"
   fi
   if [ "$preprocessor_saturation_jobs" -gt 0 ]; then
-    log "INFO" "  - $preprocessor_saturation_jobs preprocessor saturation"
+    log "INFO" "  - $preprocessor_saturation_jobs preprocessor saturation processes"
   fi
   if [ "$num_remote_jobs" -gt 0 ]; then
     log "INFO" "  - $num_remote_jobs remote jobs (over $num_remotes hosts)"
