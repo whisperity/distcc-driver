@@ -377,6 +377,8 @@ function fetch_worker_capacity {
   # only used for debugging purposes.
   #
   # Returns the worker capacity information: "THREAD_COUNT/LOAD_AVG/FREE_MEM".
+  # If the capacity could not be fetched because the server sent an invalid
+  # response or could not connect, does not emit anything and exits with '1'.
 
   local hostspec="$1"
   local -r original_hostspec="$2"
@@ -400,8 +402,10 @@ function fetch_worker_capacity {
     --max-time "10" \
     --silent \
     --show-error)"
-  # shellcheck disable=SC2181
-  if [ $? -ne 0 ]; then
+  local stat_query_response_code=$?
+  local stat_tag_count
+  stat_tag_count="$(echo "$stat_response" | grep -c "</\?distccstats>")"
+  if [ "$stat_query_response_code" -ne 0 ] || [ "$stat_tag_count" -ne 2 ]; then
     log "ERROR" "Failed to query capacity of host" \
       "\"[$original_protocol://$original_hostname]:$original_stat_port\"!" \
       "Likely the host is unavailable." \

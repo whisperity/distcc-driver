@@ -155,7 +155,7 @@ ssh \
 ```
 
 In certain scenarios, such as if the authentication to the machine is
-done via [_PKI_ or identitfy files](http://en.wikipedia.org/wiki/Public-key_cryptography), and the connection should use a key that is not the default for the **CURRENT** user (e.g., because the entire team is using a dedicated _"CI"_ or _"compiler"_ user on the servers), then this customisation **MUST** be done in the SSH configuration file at `~/.ssh/config`.
+done via [_PKI_ or identity files](http://en.wikipedia.org/wiki/Public-key_cryptography), and the connection should use a key that is not the default for the **CURRENT** user (e.g., because the entire team is using a dedicated _"CI"_ or _"compiler"_ user on the servers), then this customisation **MUST** be done in the SSH configuration file at `~/.ssh/config`.
 
 For example, you might use an `ssh://worker-1` [host specification](#host-specification) with the following _SSH config_:
 
