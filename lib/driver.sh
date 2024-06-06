@@ -956,10 +956,8 @@ function distcc_driver {
   local -ri main_return_code=$?
 
 
-
   # Clean up potential side-effects.
   cleanup
-
 
 
   return "$main_return_code"
