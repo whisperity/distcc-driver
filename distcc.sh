@@ -44,6 +44,93 @@
 #     DISTCC_HOSTS="localhost/8 server-1/16,lzo server-2/8,lzo" make foo -j 32
 #
 #
+# CONFIGURING C/C++ PROJECTS FOR USING DISTCC
+#
+#   NOTE:
+#
+#     Compilation with a DistCC cluster works best if you have sufficient
+#     stroage space to afford ccache(1) as well.
+#     Read "CONFIGURING C/C++ PROJECTS FOR USING DISTCC (WITH CCACHE)" instead,
+#     if applicable!
+#
+#  Unfortunately, just having distcc(1) installed will not "magically" make an
+#  actual execution of a build, especially when ran through a build system, use
+#  distcc(1) under the hood.
+#  The local environment must be configured to take the compilers **THROUGH**
+#  distcc's path.
+#
+#  This can be achieved by, after installing DistCC, executing
+#  'update-distcc-symlinks' as root.
+#  That tool will emit symbolic links under /usr/lib/distcc, each bearing the
+#  name of a compiler.
+#  The easiest way to configure your build is adding this directory to 'PATH'
+#  prior to the execution of 'configure' or a similar tool.
+#
+#    sudo update-distcc-symlinks
+#    export PATH="/usr/lib/distcc:${PATH}"
+#    configure
+#    # Or
+#    cmake ../path/to/source
+#
+#    DISTCC_AUTO_HOSTS="..." distcc_build make my_target
+#
+#  With this approach, the build systems and tools (autoconf(1), cmake(1),
+#  make(1), ninja(1))  will believe '/usr/lib/distcc/gcc' is **THE** compiler
+#  (whereas this path actually points to the distcc(1) binary, which will do
+#  the right thing by dispatching to the compiler!), and, in general, no other,
+#  build-system-specific changes are needed to successfully compile the project.
+#
+#  Alternatively, you may specify the path of the "masqueraded" compilers
+#  manually.
+#  (See "MASQUERADE" in distcc(1) for further details.)
+#
+#    CC="/usr/lib/distcc/gcc" CXX="/usr/lib/distcc/g++" configure
+#    # Or:
+#    cmake ../path/to/source \
+#      -DCMAKE_C_COMPILER="/usr/lib/distcc/gcc" \
+#      -DCMAKE_CXX_COMPILER="/usr/lib/distcc/g++"
+#
+#
+# CONFIGURING C/C++ PROJECTS FOR USING DISTCC (WITH CCACHE)"
+#
+#   It is **VERY RECOMMENDED** to use distcc(1) together with ccache(1) in order
+#   to prevent the distribution of compilations of files that did not change to
+#   remote workers.
+#
+#   In order to use this feature, both ccache(1) and distcc(1) have to be
+#   installed, and, just like in the example in
+#   "CONFIGURING C/C++ PROJECTS FOR USING DISTCC", the project needs to be
+#   configured with the appropriate paths to the compilers.
+#   However, ccache(1)'s execution **MUST** take priority for the combined
+#   pipeline to work.
+#
+#  This can be achieved by, after installing CCache and DistCC, executing
+#  'update-ccache-symlinks' **AND*** 'update-distcc-symlinks' as root.
+#  These tools will emit symbolic links under /usr/lib/ccache and
+#  /usr/lib/distcc, each bearing the name of a compiler.
+#  The easiest way to configure your build is adding **CCACHE'S** directory to
+#  'PATH' prior to the execution of 'configure' or a similar tool.
+#
+#    sudo update-ccache-symlinks
+#    sudo update-distcc-symlinks
+#    export PATH="/usr/lib/ccache:${PATH}"
+#    configure
+#    # Or
+#    cmake ../path/to/source
+#
+#    DISTCC_AUTO_HOSTS="..." distcc_build make my_target
+#
+#  Alternatively, as similarly to distcc(1)'s MASQUERADE facilities, you may
+#  specify the path of the ccache(1)-"masqueraded" compilers manually.
+#  (See "RUN MODES" in ccache(1) for further details.)
+#
+#    CC="/usr/lib/ccache/gcc" CXX="/usr/lib/ccache/g++" configure
+#    # Or:
+#    cmake ../path/to/source \
+#      -DCMAKE_C_COMPILER="/usr/lib/ccache/gcc" \
+#      -DCMAKE_CXX_COMPILER="/usr/lib/ccache/g++"
+#
+#
 # CONFIGURATION ENVIRONMENT VARIABLES
 #
 #     DISTCC_HOSTS
