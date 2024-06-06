@@ -246,7 +246,7 @@ function ssh_tunnel_pidfile {
 
 
 function transform_ssh_hostspec {
-  # Creates an SSH tunnel based on the given host specification ($1) and reutrns
+  # Creates an SSH tunnel based on the given host specification ($1) and returns
   # the established tunnel's client-side end as a TCP host specification.
 
   local -r hostspec="$1"

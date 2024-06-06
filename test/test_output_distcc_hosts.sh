@@ -155,7 +155,6 @@ execution_two_fake_remotes_both_exist() {
   port2="$(_getport)"
   _serve_file_http "inputs/basic_stats/8_threads.txt" "$port2"
 
-
   DISTCC_AUTO_HOSTS="localhost:1234:$port1 localhost:5678:$port2" \
     DISTCC_AUTO_EARLY_LOCAL_JOBS=0 \
     DISTCC_AUTO_FALLBACK_LOCAL_JOBS=2 \

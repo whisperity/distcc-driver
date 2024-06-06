@@ -6,6 +6,17 @@ source "./fake_http.sh"
 source "../lib/driver.sh"
 
 
+_command() {
+  if ! command -v "$1" &>/dev/null; then
+    echo "SKIPPING: '""$1""' is not available!" >&2
+    return 1
+  fi
+  return 0
+}
+
+skip_if "! _command curl || ! _command netcat" "test"
+
+
 test_fetch_worker_capacity() {
   local port
   port="$(_getport)"
