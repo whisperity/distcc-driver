@@ -1,4 +1,4 @@
-name: "Test"
+name: "CI"
 
 on:
   push:
@@ -38,14 +38,14 @@ jobs:
             "distcc.sh" \
             lib/*.sh
 
-  unit_test:
-    name: "Unit tests"
+  test:
+    name: "Test"
     runs-on: "ubuntu-20.04"
     steps:
       - uses: "actions/checkout@v4"
         with:
           submodules: "recursive"
-      - name: "Unit tests"
+      - name: "Run tests"
         run: |
           test/bash_unit/bash_unit -v
           FORCE_COLOR="true" test/bash_unit/bash_unit test/test_*

@@ -819,7 +819,11 @@ function distcc_driver {
     # Create a temporary directory for communication side-effects of helper
     # functions that are executed in a subshell by command substitution.
     export DCCSH_TEMP
-    DCCSH_TEMP="$(mktemp --directory --tmpdir="$XDG_RUNTIME_DIR")"
+    DCCSH_TEMP="$(mktemp \
+      --directory \
+      --tmpdir="$XDG_RUNTIME_DIR" \
+      "distcc-driver.XXXXXXXXXX" \
+      )"
   fi
   if [ ! -d "$DCCSH_TEMP" ]; then
     mkdir "$DCCSH_TEMP"
