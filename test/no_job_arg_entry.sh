@@ -23,7 +23,7 @@ function main {
 
   local cmd="${args[*]}"
   echo "Executing: $cmd" >&2
-  $cmd
+  exec $cmd
 }
 
 

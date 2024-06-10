@@ -349,7 +349,9 @@ function distcc_build {
       >&2
   fi
 
-  env \
-    --unset=DISTCC_HOSTS \
-    bash -c "source ${_DCCSH_SCRIPT_PATH}/lib/driver.sh; distcc_driver $*"
+  exec \
+    env \
+      --unset=DISTCC_HOSTS \
+      bash -c \
+        "source ${_DCCSH_SCRIPT_PATH}/lib/driver.sh; distcc_driver $*"
 }

@@ -62,7 +62,7 @@ write_netcat_response() {
     | head -n 1 \
     > "$tempfile" \
     &
-  local -ri netcat_pid="$!"
+  local -ri netcat_pid=$!
   declare -p netcat_pid >&2
 
   sleep 5
@@ -94,7 +94,7 @@ test_docker_ssh_raw_connection_to_dummy_server() {
 }
 
 
-test_docker_ssh_tunneled_connection() {
+test_docker_ssh_tunnelled_connection() {
   echo '' >&2
 
   local output

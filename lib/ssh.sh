@@ -403,7 +403,7 @@ function cleanup_ssh {
     # Fixes the issue of not being able to wait on a "random" PID that is
     # not in fact a child of the current shell, because SSH backgrounded itself.
     tail --quiet -f "/dev/null" --pid "$ssh_pid" &
-    local -i tail_pid="$!"
+    local -i tail_pid=$!
 
     debug "Executing command: kill $ssh_pid"
     kill "$ssh_pid"

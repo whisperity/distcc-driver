@@ -51,5 +51,5 @@ _DCCSH_SCRIPT_PATH="${0:A:h}"
 function distcc_build() {
   # A simple wrapper that forwards execution to the Bash implementation.
 
-  bash -c "source ${_DCCSH_SCRIPT_PATH}/distcc.sh; distcc_build $*"
+  exec bash -c "source ${_DCCSH_SCRIPT_PATH}/distcc.sh; distcc_build $*"
 }
