@@ -145,11 +145,15 @@ _DCCSH_SSH_RETRY_LIMIT=5
 
 function check_commands_ssh {
   _check_command cat
+  _check_command env
+  _check_command grep
   _check_command head
   _check_command kill
   _check_command pgrep
+  _check_command sed
   _check_command sleep
   _check_command ssh
+  _check_command tail
 
   if [ "$_DCCSH_HAS_MISSING_TOOLS" -ne 0 ]; then
     _DCCSH_HAS_SSH_SUPPORT=0
@@ -384,19 +388,30 @@ function cleanup_ssh {
 
   local -a ssh_tunnels=()
   mapfile -t ssh_tunnels < \
-    <(grep -v '^#' "$(ssh_tunnel_pidfile)" \
+    <(grep -v '^#\|^$' "$(ssh_tunnel_pidfile)" \
       | head -c -1)
 
+  declare -p ssh_tunnels >&2
   for tunnel in "${ssh_tunnels[@]}"; do
     local -a tunnel_fields
     IFS='=' read -ra tunnel_fields <<< "$tunnel"
 
     local ssh_hostspec="${tunnel_fields[0]}"
     local -i ssh_pid="${tunnel_fields[2]}"
-
     debug "Closing SSH tunnel of host: $ssh_hostspec ..."
+
+    # Waits until the given PID exited.
+    # Fixes the issue of not being able to wait on a "random" PID that is
+    # not in fact a child of the current shell, because SSH backgrounded itself.
+    tail --quiet -f "/dev/null" --pid "$ssh_pid" &
+    local -i tail_pid="$!"
+
     debug "Executing command: kill $ssh_pid"
     kill "$ssh_pid"
+
+    # Wait for the SSH process to terminate, at which point tail will return.
+    # Tail **IS** a child of the current shell, so this wait is legal.
+    wait "$tail_pid"
   done
 
   if [ -z "$DCCSH_DEBUG" ]; then

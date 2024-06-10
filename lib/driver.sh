@@ -82,6 +82,7 @@ function _check_command {
 function check_commands {
   _check_command awk
   _check_command curl
+  _check_command env
   _check_command free
   _check_command grep
   _check_command head
@@ -958,6 +959,7 @@ function distcc_driver {
   # Fire away the user's requested command.
   drive_distcc "$total_job_count" "${distcc_hosts[@]}" "$@"
   local -ri main_return_code=$?
+  debug "Invoked command line returned with: $main_return_code"
 
 
   # Clean up potential side-effects.
