@@ -407,10 +407,17 @@ function fetch_worker_capacity {
   local stat_tag_count
   stat_tag_count="$(echo "$stat_response" | grep -c "</\?distccstats>")"
   if [ "$stat_query_response_code" -ne 0 ] || [ "$stat_tag_count" -ne 2 ]; then
-    log "ERROR" "Failed to query capacity of host" \
-      "\"[$original_protocol://$original_hostname]:$original_stat_port\"!" \
-      "Likely the host is unavailable." \
-      "See curl error message above for details!"
+    if [ "$stat_query_response_code" -ne 0 ]; then
+      log "ERROR" "Failed to query capacities of host" \
+        "\"[$original_protocol://$original_hostname]:$original_stat_port\"!" \
+        "Likely the host is unavailable." \
+        "See curl error message above for details!"
+    elif [ "$stat_tag_count" -ne 2 ]; then
+      log "ERROR" "Failed to query capacities of host" \
+        "\"[$original_protocol://$original_hostname]:$original_stat_port\"!" \
+        "Received some response, but it was empty, or invalid!"
+    fi
+
     if [ "$hostspec" != "$original_hostspec" ]; then
       log "NOTE" "The actual query was sent to" \
         "\"[$protocol://$hostname]:$stat_port\"!"
@@ -421,6 +428,9 @@ function fetch_worker_capacity {
     return 1
   fi
 
+  # These statistical fields has been present in the output since the very early
+  # days of distcc, see distcc/distcc@d6532ae1d997a31884a67c51ec2bc75756242eed,
+  # the initial commit.
   local -i dcc_max_kids
   dcc_max_kids="$(echo "$stat_response" | grep "dcc_max_kids" \
     | cut -d ' ' -f 2)"
@@ -441,8 +451,14 @@ function fetch_worker_capacity {
   # default to "-1" (for later sorting purposes,
   # see transform_workers_by_priority()).
   #
-  # "dcc_free_mem" might not be implemented universally, as it is a
-  # recent (Jun 2024) proposal, see http://github.com/distcc/distcc/issues/521.
+  # "dcc_free_mem" might not be implemented universally, as it is has been both
+  # proposed and implemented in June 2024, see
+  #     * http://github.com/distcc/distcc/issues/521
+  #     * http://github.com/distcc/distcc/pull/523
+  # for details.
+  #
+  # Until widely available in the oldest LTS Ubuntus (aka. the next decade...),
+  # assume that it will **NOT** be available in the general case.
   local -i dcc_free_mem
   local dcc_free_mem_line
   dcc_free_mem_line="$(echo "$stat_response" | grep "dcc_free_mem")"
