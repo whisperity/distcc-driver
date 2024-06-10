@@ -391,7 +391,6 @@ function cleanup_ssh {
     <(grep -v '^#\|^$' "$(ssh_tunnel_pidfile)" \
       | head -c -1)
 
-  declare -p ssh_tunnels >&2
   for tunnel in "${ssh_tunnels[@]}"; do
     local -a tunnel_fields
     IFS='=' read -ra tunnel_fields <<< "$tunnel"

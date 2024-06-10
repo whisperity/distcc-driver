@@ -771,6 +771,9 @@ function cleanup {
   # Cleans up some potential side effects created by the driver's execution,
   # such as temporary directories, tunnels, etc.
 
+  # Do not allow further signals during the clean-up process.
+  trap "" HUP INT TERM
+
   if [ "$_DCCSH_HAS_SSH_SUPPORT" -eq 1 ]; then
     cleanup_ssh
   fi
@@ -796,6 +799,7 @@ function drive_distcc {
   shift 2
 
   debug "Executing command: $*"
+
   # Clean up the environment of the executed main command by unsetting variables
   # that were used as configuration inputs to the driver script.
   env \
@@ -808,7 +812,8 @@ function drive_distcc {
     CCACHE_PREFIX="distcc" \
     DISTCC_HOSTS="$distcc_hosts_str" \
       "$@" \
-        -j "$build_system_jobs"
+        -j "$build_system_jobs" \
+    ;
 }
 
 
@@ -856,6 +861,7 @@ function distcc_driver {
 
   debug "Invoking command line is: $*"
   print_configuration
+  trap "cleanup" EXIT
 
 
   # Parse user configuration of hosts and query worker capabilities.
@@ -976,10 +982,6 @@ function distcc_driver {
   drive_distcc "$total_job_count" "${distcc_hosts[@]}" "$@"
   local -ri main_return_code=$?
   debug "Invoked command line returned with: $main_return_code"
-
-
-  # Clean up potential side-effects.
-  cleanup
 
 
   return "$main_return_code"
