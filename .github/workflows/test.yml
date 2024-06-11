@@ -36,7 +36,8 @@ jobs:
           ./shellcheck \
             --color=always \
             "distcc.sh" \
-            lib/*.sh
+            lib/*.sh \
+            lib/*/*.sh
 
   test:
     name: "Test"

@@ -9,8 +9,9 @@ source "../distcc.sh"
 declare localhost_ip=""
 
 setup_suite() {
-  localhost_ip="$(ip address show dev lo \
-    | grep -Po 'inet \K.*?(?=[/ ])')"
+  source "../lib/core/hostname.sh"
+
+  localhost_ip="$(get_loopback_address)"
   echo "Assuming \"localhost\" is: \"$localhost_ip\" ..." >&2
 }
 
@@ -49,7 +50,8 @@ test_execution_local_only() {
 test_execution_local_only_sets_ccache_prefix() {
   assert_equals \
     "CCACHE_PREFIX=distcc" \
-    "$(execution_local_only "./no_job_arg_entry.sh env | grep CCACHE_PREFIX")"
+    "$(execution_local_only \
+      "./no_job_arg.sh env | grep CCACHE_PREFIX")"
 }
 
 
@@ -71,9 +73,9 @@ test_execution_local_only_with_preprocessor() {
 
 
 execution_fake_remote_exists() {
-  local port
-  port="$(_getport)"
-  _serve_file_http "inputs/basic_stats/8_threads.txt" "$port"
+  local -i port
+  port="$(getport)"
+  serve_file_http "inputs/basic_stats/8_threads.txt" "$port"
 
   DISTCC_AUTO_HOSTS="localhost:1234:$port" \
     DISTCC_AUTO_EARLY_LOCAL_JOBS=2 \
@@ -87,13 +89,14 @@ test_execution_fake_remote_exists() {
   assert_equals "-j 10" "$(execution_fake_remote_exists "echo")"
   assert_equals \
     "DISTCC_HOSTS=localhost/2 --localslots=2 $localhost_ip:1234/8,lzo" \
-    "$(execution_fake_remote_exists "./no_job_arg_entry.sh env | grep DISTCC")"
+    "$(execution_fake_remote_exists \
+      "./no_job_arg.sh env | grep DISTCC")"
 }
 
 execution_fake_remote_exists_with_preprocessor() {
-  local port
-  port="$(_getport)"
-  _serve_file_http "inputs/basic_stats/8_threads.txt" "$port"
+  local -i port
+  port="$(getport)"
+  serve_file_http "inputs/basic_stats/8_threads.txt" "$port"
 
   DISTCC_AUTO_HOSTS="localhost:1234:$port" \
     DISTCC_AUTO_EARLY_LOCAL_JOBS=2 \
@@ -110,7 +113,7 @@ test_execution_fake_remote_exists_with_preprocessor() {
   assert_equals \
     "DISTCC_HOSTS=localhost/2 --localslots=2 --localslots_cpp=3 $localhost_ip:1234/8,lzo" \
     "$(execution_fake_remote_exists_with_preprocessor \
-      "./no_job_arg_entry.sh env | grep DISTCC")"
+      "./no_job_arg.sh env | grep DISTCC")"
 
 }
 
@@ -118,16 +121,16 @@ test_execution_fake_remote_exists_with_preprocessor_cleans_environment() {
   assert_equals \
     "" \
     "$(execution_fake_remote_exists_with_preprocessor \
-      "./no_job_arg_entry.sh env | grep -i DISTCC_AUTO")"
+      "./no_job_arg.sh env | grep -i DISTCC_AUTO")"
   assert_equals \
     "" \
     "$(execution_fake_remote_exists_with_preprocessor \
-      "./no_job_arg_entry.sh env | grep -i DCCSH")"
+      "./no_job_arg.sh env | grep -i DCCSH")"
 }
 
 execution_fake_remote_does_not_exist() {
-  local port
-  port="$(_getport)"
+  local -i port
+  port="$(getport)"
 
   DISTCC_AUTO_HOSTS="localhost:1234:$port" \
     DISTCC_AUTO_EARLY_LOCAL_JOBS=2 \
@@ -142,18 +145,18 @@ test_execution_fake_remote_does_not_exist() {
   assert_equals \
     "DISTCC_HOSTS=localhost/4 --localslots=4" \
     "$(execution_fake_remote_does_not_exist \
-      "./no_job_arg_entry.sh env | grep DISTCC")"
+      "./no_job_arg.sh env | grep DISTCC")"
 }
 
 
 execution_two_fake_remotes_both_exist() {
-  local port1
-  port1="$(_getport)"
-  _serve_file_http "inputs/basic_stats/single_thread.txt" "$port1"
+  local -i port1
+  port1="$(getport)"
+  serve_file_http "inputs/basic_stats/single_thread.txt" "$port1"
 
-  local port2
-  port2="$(_getport)"
-  _serve_file_http "inputs/basic_stats/8_threads.txt" "$port2"
+  local -i port2
+  port2="$(getport)"
+  serve_file_http "inputs/basic_stats/8_threads.txt" "$port2"
 
   DISTCC_AUTO_HOSTS="localhost:1234:$port1 localhost:5678:$port2" \
     DISTCC_AUTO_EARLY_LOCAL_JOBS=0 \
@@ -168,16 +171,16 @@ test_execution_two_fake_remotes_both_exist() {
   assert_equals \
     "DISTCC_HOSTS=$localhost_ip:5678/8,lzo $localhost_ip:1234/1,lzo" \
     "$(execution_two_fake_remotes_both_exist \
-      "./no_job_arg_entry.sh env | grep DISTCC")"
+      "./no_job_arg.sh env | grep DISTCC")"
 }
 
 execution_two_fake_remotes_small_missing() {
-  local port1
-  port1="$(_getport)"
+  local -i port1
+  port1="$(getport)"
 
-  local port2
-  port2="$(_getport)"
-  _serve_file_http "inputs/basic_stats/8_threads.txt" "$port2"
+  local -i port2
+  port2="$(getport)"
+  serve_file_http "inputs/basic_stats/8_threads.txt" "$port2"
 
   DISTCC_AUTO_HOSTS="localhost:1234:$port1 localhost:5678:$port2" \
     DISTCC_AUTO_EARLY_LOCAL_JOBS=0 \
@@ -192,16 +195,16 @@ test_execution_two_fake_remotes_small_missing() {
   assert_equals \
     "DISTCC_HOSTS=$localhost_ip:5678/8,lzo" \
     "$(execution_two_fake_remotes_small_missing \
-      "./no_job_arg_entry.sh env | grep DISTCC")"
+      "./no_job_arg.sh env | grep DISTCC")"
 }
 
 execution_two_fake_remotes_big_missing() {
-  local port1
-  port1="$(_getport)"
-  _serve_file_http "inputs/basic_stats/single_thread.txt" "$port1"
+  local -i port1
+  port1="$(getport)"
+  serve_file_http "inputs/basic_stats/single_thread.txt" "$port1"
 
-  local port2
-  port2="$(_getport)"
+  local -i port2
+  port2="$(getport)"
 
   DISTCC_AUTO_HOSTS="localhost:1234:$port1 localhost:5678:$port2" \
     DISTCC_AUTO_EARLY_LOCAL_JOBS=0 \
@@ -216,5 +219,5 @@ test_execution_two_fake_remotes_big_missing() {
   assert_equals \
     "DISTCC_HOSTS=$localhost_ip:1234/1,lzo" \
     "$(execution_two_fake_remotes_big_missing \
-      "./no_job_arg_entry.sh env | grep DISTCC")"
+      "./no_job_arg.sh env | grep DISTCC")"
 }

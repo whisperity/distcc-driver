@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: MIT
 
 
-function _getport {
+function getport {
   # Returns a random port that is likely to be usable as a listening server.
 
-  local port=0
+  local -i port=0
   while true; do
     port="$(( ( (RANDOM << 15) | RANDOM ) % 63001 + 2000))"
     echo "World!" | netcat -Nl "$port" >/dev/null &
@@ -19,12 +19,11 @@ function _getport {
     fi
   done
 
-  # Return value.
   echo "$port"
 }
 
 
-function _serve_file_http {
+function serve_file_http {
   # Serves the content of file $1 over HTTP port $2.
 
   cat <<EOS | netcat -Nl "$2" >/dev/null &
@@ -35,6 +34,6 @@ Connection: close
 $(cat "$1")
 EOS
 
-  # echo "Serving '""$1""' on :$2, PID $!" >&2
+  echo "fake_http: Serving file '$1' on ':$2', PID $!" >&2
   sleep 2
 }

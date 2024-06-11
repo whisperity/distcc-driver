@@ -2,15 +2,21 @@
 # SPDX-License-Identifier: MIT
 
 
-source "../lib/driver.sh"
-source "../lib/ssh.sh"
+source "../lib/core.sh"
+
+export DCCSH_SCRIPT_PATH
+DCCSH_SCRIPT_PATH="$(readlink -f ../)"
+load_core
+
+source "../lib/host.sh"
+
+skip_if "! load_core" "test"
 
 
 declare localhost_ip=""
 
 setup_suite() {
-  localhost_ip="$(ip address show dev lo \
-    | grep -Po 'inet \K.*?(?=[/ ])')"
+  localhost_ip="$(get_loopback_address)"
   echo "Assuming \"localhost\" is: \"$localhost_ip\" ..." >&2
 }
 
@@ -71,10 +77,10 @@ test_parse_distcc_auto_hosts() {
 }
 
 
-test_unique_host_specifications() {
+test_unique_hosts() {
   assert_equals \
     "tcp/localhost/3632/3633;tcp/localhost/1234/5678;tcp/example.com/80/443" \
-    "$(unique_host_specifications \
+    "$(unique_hosts \
       "tcp/localhost/3632/3633" \
       "tcp/localhost/1234/5678" \
       "tcp/localhost/3632/3633" \
@@ -84,103 +90,103 @@ test_unique_host_specifications() {
 }
 
 
-test_scale_worker_job_counts() {
+test_scale_worker_jobs() {
   assert_equals \
     "tcp/localhost/3632/3633/16/0/-1" \
-    "$(scale_worker_job_counts 20480 "tcp/localhost/3632/3633/16/0/-1")"
+    "$(scale_worker_jobs 20480 "tcp/localhost/3632/3633/16/0/-1")"
 
   assert_equals \
     "tcp/localhost/3632/3633/16/0/8192" \
-    "$(scale_worker_job_counts 0 "tcp/localhost/3632/3633/16/0/8192")"
+    "$(scale_worker_jobs 0 "tcp/localhost/3632/3633/16/0/8192")"
 
   assert_equals \
     "tcp/localhost/3632/3633/16/0/-1" \
-    "$(scale_worker_job_counts 10240 "tcp/localhost/3632/3633/16/0/-1")"
+    "$(scale_worker_jobs 10240 "tcp/localhost/3632/3633/16/0/-1")"
 
   assert_equals \
     "tcp/localhost/3632/3633/1/0/1024" \
-    "$(scale_worker_job_counts 1024 "tcp/localhost/3632/3633/16/0/1024")"
+    "$(scale_worker_jobs 1024 "tcp/localhost/3632/3633/16/0/1024")"
 
   assert_equals \
     "tcp/localhost/3632/3633/1/0/1024;tcp/localhost/1234/5678/1/0/1024" \
-    "$(scale_worker_job_counts 1024 \
+    "$(scale_worker_jobs 1024 \
       "tcp/localhost/3632/3633/16/0/1024" "tcp/localhost/1234/5678/8/0/1024")"
 
   assert_equals \
     "" \
-    "$(scale_worker_job_counts 2048 \
+    "$(scale_worker_jobs 2048 \
       "tcp/localhost/3632/3633/16/0/1024" "tcp/localhost/1234/5678/8/0/1024")"
 
   assert_equals \
     "tcp/localhost/3632/3633/5/0/10240" \
-    "$(scale_worker_job_counts 2048 \
+    "$(scale_worker_jobs 2048 \
       "tcp/localhost/3632/3633/16/0/10240" "tcp/localhost/1234/5678/8/0/1024")"
 
   assert_equals \
     "tcp/localhost/1234/5678/5/0/10240" \
-    "$(scale_worker_job_counts 2048 \
+    "$(scale_worker_jobs 2048 \
       "tcp/localhost/3632/3633/16/0/1024" "tcp/localhost/1234/5678/8/0/10240")"
 }
 
 
-test_sum_worker_job_counts() {
+test_sum_worker_jobs() {
   assert_equals \
     "16" \
-    "$(sum_worker_job_counts "tcp/localhost/3632/3633/16/0/-1")"
+    "$(sum_worker_jobs "tcp/localhost/3632/3633/16/0/-1")"
 
   assert_equals \
     "16" \
-    "$(sum_worker_job_counts "tcp/localhost/3632/3633/16/0/8192")"
+    "$(sum_worker_jobs "tcp/localhost/3632/3633/16/0/8192")"
 
   assert_equals \
     "16" \
-    "$(sum_worker_job_counts "tcp/localhost/3632/3633/16/0/-1")"
+    "$(sum_worker_jobs "tcp/localhost/3632/3633/16/0/-1")"
 
   assert_equals \
     "16" \
-    "$(sum_worker_job_counts "tcp/localhost/3632/3633/16/0/1024")"
+    "$(sum_worker_jobs "tcp/localhost/3632/3633/16/0/1024")"
 
   assert_equals \
     "24" \
-    "$(sum_worker_job_counts \
+    "$(sum_worker_jobs \
       "tcp/localhost/3632/3633/16/0/1024" "tcp/localhost/1234/5678/8/0/1024")"
 
   assert_equals \
     "24" \
-    "$(sum_worker_job_counts \
+    "$(sum_worker_jobs \
       "tcp/localhost/3632/3633/16/0/1024" "tcp/localhost/1234/5678/8/0/1024")"
 
   assert_equals \
     "24" \
-    "$(sum_worker_job_counts \
+    "$(sum_worker_jobs \
       "tcp/localhost/3632/3633/16/0/10240" "tcp/localhost/1234/5678/8/0/1024")"
 
   assert_equals \
     "24" \
-    "$(sum_worker_job_counts \
+    "$(sum_worker_jobs \
       "tcp/localhost/3632/3633/16/0/1024" "tcp/localhost/1234/5678/8/0/10240")"
 
   assert_equals \
     "32" \
-    "$(sum_worker_job_counts \
+    "$(sum_worker_jobs \
       "tcp/localhost/3632/3633/16/0/1024" "tcp/localhost/1234/5678/8/0/10240" \
       "tcp/localhost/8888/9999/8/0/0")"
 }
 
 
-test_scale_local_job_count() {
-  assert_equals 0 "$(scale_local_job_count 0 1024 10240)"
-  assert_equals 10 "$(scale_local_job_count 16 1024 10240)"
-  assert_equals 16 "$(scale_local_job_count 16 1024 0)"
-  assert_equals 16 "$(scale_local_job_count 16 0 0)"
-  assert_equals 16 "$(scale_local_job_count 16 0 10240)"
+test_scale_local_jobs() {
+  assert_equals 0 "$(scale_local_jobs 0 1024 10240)"
+  assert_equals 10 "$(scale_local_jobs 16 1024 10240)"
+  assert_equals 16 "$(scale_local_jobs 16 1024 0)"
+  assert_equals 16 "$(scale_local_jobs 16 0 0)"
+  assert_equals 16 "$(scale_local_jobs 16 0 10240)"
 
-  assert_equals 8 "$(scale_local_job_count 8 1024 10240)"
-  assert_equals 5 "$(scale_local_job_count 8 2048 10240)"
+  assert_equals 8 "$(scale_local_jobs 8 1024 10240)"
+  assert_equals 5 "$(scale_local_jobs 8 2048 10240)"
 }
 
 
-test_transform_workers_by_priority() {
+test_sort_workers() {
   local worker_4j_5l_4g="tcp/localhost/1000/2000/4/5/4096"
   local worker_4j_5l_8g="tcp/localhost/1001/2002/4/5/8192"
   local worker_8j_2l_16g="tcp/localhost/1002/2002/8/2/16384"
@@ -200,7 +206,7 @@ test_transform_workers_by_priority() {
 
   assert_equals \
     "$expected" \
-    "$(transform_workers_by_priority \
+    "$(sort_workers \
       "$worker_4j_5l_4g" \
       "$worker_4j_5l_8g" \
       "$worker_8j_2l_16g" \

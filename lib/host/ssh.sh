@@ -139,32 +139,40 @@
 ################################################################################
 
 
-_DCCSH_HAS_SSH_SUPPORT=1
-_DCCSH_SSH_RETRY_LIMIT=5
+_dccsh_host_ssh_connection_retry_limit=5
 
 
-function check_commands_ssh {
-  _check_command cat
-  _check_command env
-  _check_command grep
-  _check_command head
-  _check_command kill
-  _check_command pgrep
-  _check_command sed
-  _check_command sleep
-  _check_command ssh
-  _check_command tail
+function load_host_ssh {
+  # Checks that the tools needed by the TCP library are available, and sources
+  # additional scripts that are part of the library.
+  #
+  # Returns 1 (fail) if the system failed to load, and 0 (success) otherwise.
 
-  if [ "$_DCCSH_HAS_MISSING_TOOLS" -ne 0 ]; then
-    _DCCSH_HAS_SSH_SUPPORT=0
+  if \
+      ! check_command cat "ERROR" || \
+      ! check_command env "ERROR" || \
+      ! check_command grep "ERROR" || \
+      ! check_command head "ERROR" || \
+      ! check_command kill "ERROR" || \
+      ! check_command pgrep "ERROR" || \
+      ! check_command ps "ERROR" || \
+      ! check_command sed "ERROR" || \
+      ! check_command ssh "ERROR" || \
+      ! check_command tail "ERROR" || \
+      false; then
+    log "ERROR" "\"lib/host/ssh\" failed to load due to missing utilities."
+    return 1
   fi
+
+  return 0
 }
 
 
-function parse_ssh_hostspec {
-  # Parses an AUTO_HOST_SPEC which is according to the SSH_HOST grammar.
+function parse_hostspec_ssh {
+  # Parses a hostspec string, which is according to the SSH_HOST grammar.
+  #
   # Returns the single '/'-separated split specification fields:
-  # "PROTOCOL/[USERNAME@]HOSTNAME[:PORT]/
+  # "PROTOCOL/[USERNAME@]HOSTNAME[:SSH_PORT]/PORT/STAT_PORT"
 
   local hostspec="$1"
   local -r original_hostspec="$hostspec"
@@ -183,7 +191,7 @@ function parse_ssh_hostspec {
 
   local hostname
   hostname="$(echo "$hostspec" | grep -Eo '^([^/]*)')"
-  hostname="$(get_hostname_from_hostspec "$hostname")"
+  hostname="$(extract_hostname_from_hostspec "$hostname")"
   hostspec="${hostspec/"$hostname"/}"
 
   if [ -n "$username" ]; then
@@ -201,8 +209,11 @@ function parse_ssh_hostspec {
     debug "  - SSH port: $ssh_port"
   fi
 
-  local -i job_port="$_DCCSH_DEFAULT_DISTCC_PORT"
-  local -i stat_port="$_DCCSH_DEFAULT_STATS_PORT"
+  local -i job_port
+  job_port="$(distcc_default_port)"
+  local -i stat_port
+  stat_port="$(distcc_default_stats_port)"
+
   match_port="$(echo "$hostspec" | grep -Eo '^/[0-9]{1,5}' | sed 's/^\///')"
   if [ -n "$match_port" ]; then
     # If the match-port matched **once** with '/' as the prefix, it MUST be the
@@ -223,33 +234,16 @@ function parse_ssh_hostspec {
 
   # After parsing, the hostspec should have emptied.
   if [ -n "$hostspec" ]; then
-    log "WARNING" "Parsing of malformed DISTCC_AUTO_HOSTS entry" \
+    log "WARNING" "Parsing of malformed SSH host specification" \
       "\"$original_hostspec\" did not conclude cleanly, and \"$hostspec\"" \
       "was ignored!"
   fi
 
-  # Return value.
   array '/' "ssh" "$ssh_full_host" "$job_port" "$stat_port"
 }
 
 
-function random_port_number {
-  # Returns a random port in the non-superuser range.
-  # It is not checked whether the port is valid for binding by a server.
-
-  # Return value.
-  echo "$(( ( (RANDOM << 15) | RANDOM ) % (65536 - 1024) + 1024 ))"
-}
-
-
-function ssh_tunnel_pidfile {
-  # Returns the location where SSH tunnel information should be written.
-
-  echo "$DCCSH_TEMP/ssh-tunnel-pids.txt"
-}
-
-
-function transform_ssh_hostspec {
+function transform_hostspec_ssh {
   # Creates an SSH tunnel based on the given host specification ($1) and returns
   # the established tunnel's client-side end as a TCP host specification.
 
@@ -314,7 +308,7 @@ function transform_ssh_hostspec {
   ssh_client_args+=("-o" "Compression=no")
 
   local -i retries=1
-  while [ "$retries" -le "$_DCCSH_SSH_RETRY_LIMIT" ]; do
+  while [ "$retries" -le "$_dccsh_host_ssh_connection_retry_limit" ]; do
     local -a ssh_client_args_with_ports=("${ssh_client_args[@]}")
 
     # Set up a random local port to forward connections to the remote server.
@@ -324,10 +318,10 @@ function transform_ssh_hostspec {
 
     ssh_client_args_with_ports+=(
       "-L"
-      "$(loopback_address):$job_port_local:localhost:$job_port_on_server"
+      "$(get_loopback_address):$job_port_local:localhost:$job_port_on_server"
 
       "-L"
-      "$(loopback_address):$stat_port_local:localhost:$stat_port_on_server"
+      "$(get_loopback_address):$stat_port_local:localhost:$stat_port_on_server"
     )
     ssh_client_args_with_ports+=("ssh://$ssh_host")
 
@@ -344,51 +338,55 @@ function transform_ssh_hostspec {
       )"
 
     if ! ps "$ssh_pid" &>/dev/null; then
-      log "WARNING" "($retries/$_DCCSH_SSH_RETRY_LIMIT)" \
+      log "WARNING" "($retries/$_dccsh_host_ssh_connection_retry_limit)" \
         "Failed to establish SSH connection with tunnels to \"$hostspec\"!"
     else
-      debug "SSH connection via process #$ssh_pid established to: \"$hostspec\""
+      debug "SSH connection via process #$ssh_pid established to: $hostspec"
       break
     fi
 
     retries+=1
   done
 
-  if [ "$retries" -gt "$_DCCSH_SSH_RETRY_LIMIT" ]; then
+  if [ "$retries" -gt "$_dccsh_host_ssh_connection_retry_limit" ]; then
     log "ERROR" "Failed to establish SSH connection with tunnels to" \
-      "\"$hostspec\" after $_DCCSH_SSH_RETRY_LIMIT retries!"
+      "\"$hostspec\" after $_dccsh_host_ssh_connection_retry_limit retries!"
     return 2
   fi
 
   local -r tcp_hostspec="$(array '/' \
-    "tcp" "$(loopback_address)" "$job_port_local" "$stat_port_local" \
+    "tcp" "$(get_loopback_address)" "$job_port_local" "$stat_port_local" \
     )"
 
   cat <<EOF >> "$(ssh_tunnel_pidfile)"
 # SSH: $ssh_host
-# TCP: $(loopback_address)
+# TCP: $(get_loopback_address)
 # D_Tunnel: $job_port_local -> $job_port_on_server
 # S_Tunnel: $stat_port_local -> $stat_port_on_server
 # PID: $ssh_pid
 $hostspec=$tcp_hostspec=$ssh_pid
 
 EOF
+  register_cleanup "cleanup_ssh"
 
-  # Return value.
   echo "$tcp_hostspec"
 }
 
 
 function cleanup_ssh {
-  # Kills ssh(1) processes created by transform_ssh_hostspec().
+  # Kills ssh(1) processes created by transform_hostspec_ssh() during the
+  # shutdown routine.
 
-  if [ ! -f "$(ssh_tunnel_pidfile)" ]; then
+  local pidfile
+  pidfile="$(ssh_tunnel_pidfile)"
+
+  if [ ! -f "$pidfile" ]; then
     return
   fi
 
   local -a ssh_tunnels=()
   mapfile -t ssh_tunnels < \
-    <(grep -v '^#\|^$' "$(ssh_tunnel_pidfile)" \
+    <(grep -v '^#\|^$' "$pidfile" \
       | head -c -1)
 
   for tunnel in "${ssh_tunnels[@]}"; do
@@ -414,6 +412,21 @@ function cleanup_ssh {
   done
 
   if [ -z "$DCCSH_DEBUG" ]; then
-    rm "$(ssh_tunnel_pidfile)"
+    rm "$pidfile"
   fi
+}
+
+
+function random_port_number {
+  # Returns a random port in the non-superuser range.
+  # It is not checked whether the port is valid for binding by a server.
+
+  echo "$(( ( (RANDOM << 15) | RANDOM ) % (65536 - 1024) + 1024 ))"
+}
+
+
+function ssh_tunnel_pidfile {
+  # Returns the location where SSH tunnel information should be written.
+
+  echo "$DCCSH_TEMP/ssh-tunnel-pids.txt"
 }

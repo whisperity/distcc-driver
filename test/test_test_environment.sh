@@ -11,10 +11,10 @@ test_core_utility_free() {
 }
 
 
-test_fake_entry_jobs_arg_remover() {
-  assert_equals "x" "$(./no_job_arg_entry.sh echo x)"
-  assert_equals "x y" "$(./no_job_arg_entry.sh echo x y)"
-  assert_equals "x y" "$(./no_job_arg_entry.sh echo x y -j 8)"
-  assert_equals "x y" "$(./no_job_arg_entry.sh echo -j 8 x y)"
-  assert_equals "x y" "$(./no_job_arg_entry.sh echo x -j 8 y)"
+test_script_no_job_arg() {
+  assert_equals "x" "$(./no_job_arg.sh echo x)"
+  assert_equals "x y" "$(./no_job_arg.sh echo x y)"
+  assert_equals "x y" "$(./no_job_arg.sh echo x y -j 8)"
+  assert_equals "x y" "$(./no_job_arg.sh echo -j 8 x y)"
+  assert_equals "x y" "$(./no_job_arg.sh echo x -j 8 y)"
 }

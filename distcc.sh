@@ -317,41 +317,55 @@
 ################################################################################
 
 
-function _distcc_auto_lib_path {
-  # Determines the location where the currently loaded script is.
-  # Needed to accurately source the actual "library" code when distcc_build is
-  # called.
-  #
-  # Via http://stackoverflow.com/a/246128.
+# Determines the location where the currently loaded script is.
+# Needed to accurately source the actual "library" code when distcc_build is
+# called.
+if [ -n "$BASH_VERSION" ]; then
+  function distcc_auto_lib_path {
+    # Via http://stackoverflow.com/a/246128.
 
-  local file="${BASH_SOURCE[0]}"
-  local dir
-  while [ -L "$file" ]; do
+    local file="${BASH_SOURCE[0]}"
+    local dir
+    while [ -L "$file" ]; do
+      dir=$( cd -P "$( dirname "$file" )" >/dev/null 2>&1 && pwd )
+      file=$(readlink "$file")
+      [[ "$file" != /* ]] && file=$dir/$file
+    done
     dir=$( cd -P "$( dirname "$file" )" >/dev/null 2>&1 && pwd )
-    file=$(readlink "$file")
-    [[ "$file" != /* ]] && file=$dir/$file
-  done
-  dir=$( cd -P "$( dirname "$file" )" >/dev/null 2>&1 && pwd )
 
-  # Return value.
-  echo "$file"
-}
+    echo "$file"
+  }
+
+  _DCCSH_SCRIPT_PATH="$(dirname -- "$(readlink -f "$(distcc_auto_lib_path)")")"
+
+  unset -f distcc_auto_lib_path
+elif [ -n "$ZSH_VERSION" ]; then
+  # Determines the location where the currently loaded script is.
+  # Needed to accurately source the actual code when distcc_build is called.
+  _DCCSH_SCRIPT_PATH="${0:A:h}"
+else
+  echo "distcc-driver - ERROR: Unknown shell '""$0""'!" >&2
+  echo "distcc-driver - ERROR: This script supports only Bash and Zsh." >&2
+fi
 
 
-_DCCSH_SCRIPT_PATH="$(dirname -- "$(readlink -f "$(_distcc_auto_lib_path)")")"
+if [ -n "$BASH_VERSION" ] || [ -n "$ZSH_VERSION" ]; then
+  function distcc_build {
+    if [ -n "${DISTCC_HOSTS}" ]; then
+      echo "distcc-driver: WARNING: Calling distcc_build, but environment" \
+        "variable 'DISTCC_HOSTS' is set to something." \
+        "The build will **NOT** respect that already set value!" \
+        >&2
+    fi
 
-
-function distcc_build {
-  if [ -n "${DISTCC_HOSTS}" ]; then
-    echo "WARNING: Calling distcc_build, but environment variable" \
-      "DISTCC_HOSTS is set to something." \
-      "The build will **NOT** respect the already set value!" \
-      >&2
-  fi
-
-  exec \
-    env \
-      --unset=DISTCC_HOSTS \
-      bash -c \
-        "source ${_DCCSH_SCRIPT_PATH}/lib/driver.sh; distcc_driver $*"
-}
+    exec \
+      env \
+        --unset=DISTCC_HOSTS \
+        PATH="${_DCCSH_SCRIPT_PATH}/lib:${PATH}" \
+        _DCCSH_SCRIPT_PATH="${_DCCSH_SCRIPT_PATH}" \
+        bash -c \
+          "distcc_build "'$@'"" \
+            '_' \
+            "$@"
+  }
+fi

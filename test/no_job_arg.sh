@@ -21,10 +21,9 @@ function main {
     args+=("$arg")
   done
 
-  local cmd="${args[*]}"
-  echo "Executing: $cmd" >&2
-  exec $cmd
-}
+  echo "no_job_arg - Executing command: ${args[*]}" >&2
 
+  echo "${args[@]}" | bash
+}
 
 main "$@"

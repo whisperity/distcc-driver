@@ -7,17 +7,18 @@ source "../distcc.sh"
 
 _command() {
   if ! command -v "$1" &>/dev/null; then
-    echo "SKIPPING: '""$1""' is not available!" >&2
+    echo "SKIPPING: '$1' is not available!" >&2
     return 1
   fi
   return 0
 }
 
-skip_if "! _command docker || ! _command netcat || ! _command ssh" "test"
+skip_if "! _command dd || ! _command docker || ! _command mktemp || ! _command netcat || ! _command ssh" "test"
 
 
 IMAGE="distcc-driver-ssh-test"
 CONTAINER="distcc-driver-ssh-test-test-1"
+
 
 setup_suite() {
   if ! _command "docker"; then
@@ -48,7 +49,6 @@ teardown_suite() {
   # Clean up the Docker artefacts.
   docker kill "$CONTAINER"
   docker rm "$CONTAINER"
-  docker rmi "$IMAGE"
 }
 
 
@@ -63,7 +63,6 @@ write_netcat_response() {
     > "$tempfile" \
     &
   local -ri netcat_pid=$!
-  declare -p netcat_pid >&2
 
   sleep 5
   echo "$netcat_pid"
