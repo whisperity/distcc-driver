@@ -1,0 +1,6 @@
+argv /false
+<html>
+<head />
+
+I am a bad response! ×)
+</html>

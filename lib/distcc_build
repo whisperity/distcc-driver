@@ -1,0 +1,207 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+#
+################################################################################
+### distcc-driver(1)      DistCC remote auto-job script     distcc-driver(1) ###
+#
+# NAME
+#
+#   distcc-driver-lib
+#
+#
+# SUMMARY
+#
+#   Underlying implementation of business logic for the DistCC remote auto-job
+#   script.
+#
+#
+# CONFIGURATION ENVIRONMENT VARIABLES
+#
+#   For most user-facing configuration variables, please see the documentation
+#   of 'distcc.sh' instead.
+#
+#     DCCSH_DEBUG               If defined to a non-empty string, additional
+#                               debugging and tracing information is printed.
+#
+#     DCCSH_TEMP                A temporary directory where helper functions in
+#                               the implementation can create description files
+#                               for side-effects.
+#                               Defaults to a random-generated temporary
+#                               directory path, as created by mktemp(1).
+#
+#
+# AUTHOR
+#
+#    @Whisperity <whisperity-packages@protonmail.com>
+#
+################################################################################
+
+
+# shellcheck disable=2153
+DCCSH_SCRIPT_PATH="${_DCCSH_SCRIPT_PATH}"
+unset _DCCSH_SCRIPT_PATH
+
+if [ -z "$DCCSH_SCRIPT_PATH" ]; then
+  function self_path {
+    # Via http://stackoverflow.com/a/246128.
+
+    local file="${BASH_SOURCE[0]}"
+    local dir
+    while [ -L "$file" ]; do
+      dir=$( cd -P "$( dirname "$file" )" >/dev/null 2>&1 && pwd )
+      file=$(readlink "$file")
+      [[ "$file" != /* ]] && file=$dir/$file
+    done
+    dir=$( cd -P "$( dirname "$file" )" >/dev/null 2>&1 && pwd )
+
+    echo "$file"
+  }
+
+  DCCSH_SCRIPT_PATH="$(dirname \
+    "$(dirname -- \
+    "$(readlink -f "$(self_path)") \
+    ") \
+    ")"
+
+  unset -f self_path
+fi
+
+
+source "$DCCSH_SCRIPT_PATH/lib/core.sh"
+
+if ! load_core; then
+  exit 96
+fi
+
+
+source "$DCCSH_SCRIPT_PATH/lib/host.sh"
+
+
+function distcc_build {
+  # The main entry point to the implementation of the job deployment client.
+
+  if [ $# -eq 0 ]; then
+    log "FATAL" "'distcc_build' called without specifying a command to" \
+      "execute!"
+    return 96
+  fi
+
+  if [ -z "$DISTCC_AUTO_HOSTS" ]; then
+    log "FATAL" "'distcc_build' called without setting 'DISTCC_AUTO_HOSTS'!"
+    return 96
+  fi
+
+
+  # Log the user's requested command-line and debug-print the DISTCC_AUTO_*
+  # configuration variables.
+  debug "Invoking command line is: $*"
+  print_configuration
+  create_administrative_tempdir
+
+
+  # Parse user configuration of hosts and query worker capabilities.
+  local -a workers
+  IFS=';' read -ra workers \
+    <<< "$(assemble_worker_specifications "${DISTCC_AUTO_HOSTS:=}")"
+
+
+  # Scale workers' known specification to available capacity, if needed.
+  local -i requested_per_job_mem
+  requested_per_job_mem="$(distcc_auto_compiler_memory)"
+  if [ "$requested_per_job_mem" == "0" ]; then
+    debug "DISTCC_AUTO_COMPILER_MEMORY == \"0\": Skip scaling workers"
+  else
+    IFS=';' read -ra workers \
+      <<< "$(scale_worker_jobs "$requested_per_job_mem" "${workers[@]}")"
+  fi
+
+
+  # Select the "best" workers (with the most available capacity) to be
+  # saturated first.
+  local -ri num_remotes="${#workers[@]}"
+  if [ "$num_remotes" -gt 0 ]; then
+    IFS=';' read -ra workers \
+      <<< "$(sort_workers "${workers[@]}")"
+  fi
+
+
+  debug "Effective remote specification:"
+  for worker_specification in "${workers[@]}"; do
+    debug "  - $worker_specification"
+  done
+
+
+  # Calculate the total width of the parallelism to execute.
+  local -ri requested_local_jobs="$(get_local_job_count "$num_remotes")"
+  if [ "$num_remotes" -eq 0 ] && [ "$requested_local_jobs" -eq 0 ]; then
+    log "FATAL" "Refusing to build!"
+    log "FATAL" "There are NO remote workers available, and local execution" \
+      "was disabled either on request, or due to lack of available memory."
+    return 97
+  fi
+
+  local -i num_remote_jobs=0
+  local -i preprocessor_saturation_jobs=0
+  local -i total_job_count=0
+  if [ "$num_remotes" -ne 0 ]; then
+    num_remote_jobs="$(sum_worker_jobs "${workers[@]}")"
+    total_job_count="$(( num_remote_jobs + requested_local_jobs ))"
+  else
+    total_job_count="$requested_local_jobs"
+  fi
+
+  if [ "$total_job_count" -eq 0 ]; then
+    log "FATAL (ASSERT) @ $LINENO" \
+      "Total job count was $total_job_count but an earlier exit was not taken."
+    exit 97
+  fi
+
+  local -i preprocessor_saturation_jobs
+  preprocessor_saturation_jobs="$(distcc_auto_preprocessor_saturation_jobs)"
+  if [ "$preprocessor_saturation_jobs" -eq 0 ]; then
+    debug "Preprocessor saturation job count == 0: Skip setting up"
+  elif [ "$num_remotes" -eq 0 ]; then
+    debug "No remote workers: skip preprocessor saturation jobs"
+    preprocessor_saturation_jobs=0
+  else
+    total_job_count="$(( total_job_count + preprocessor_saturation_jobs ))"
+  fi
+
+
+  # Inform the user about the number of jobs that will be running.
+  log "INFO" "Building '-j $total_job_count':"
+  if [ "$requested_local_jobs" -gt 0 ]; then
+    log "INFO" "  - $requested_local_jobs local compilations"
+  fi
+  if [ "$preprocessor_saturation_jobs" -gt 0 ]; then
+    log "INFO" "  - $preprocessor_saturation_jobs preprocessor saturation" \
+      "processes"
+  fi
+  if [ "$num_remote_jobs" -gt 0 ]; then
+    log "INFO" "  - $num_remote_jobs remote jobs (over $num_remotes hosts)"
+  fi
+
+
+  # Assemble environment and command to execute.
+  local distcc_hosts
+  distcc_hosts="$(assemble_distcc_hosts \
+    "$requested_local_jobs" \
+    "$preprocessor_saturation_jobs" \
+    "${workers[@]}")"
+  debug "Using DISTCC_HOSTS: ${distcc_hosts[*]}"
+
+
+  # Execute the user's requested command.
+  execute_user_command_under_distcc "$total_job_count" "${distcc_hosts[@]}" "$@"
+  local -ri main_return_code=$?
+  debug "Invoked command line returned with: $main_return_code"
+
+
+  return "$main_return_code"
+}
+
+if [[ "$0" =~ distcc_build$ ]]; then
+  # Run the "main()" if the script is called as an entry point, otherwise, allow
+  # for library-like actions (e.g., testing) to take place.
+  distcc_build "$@"
+fi
