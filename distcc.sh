@@ -358,14 +358,13 @@ if [ -n "$BASH_VERSION" ] || [ -n "$ZSH_VERSION" ]; then
         >&2
     fi
 
-    exec \
-      env \
-        --unset=DISTCC_HOSTS \
-        PATH="${_DCCSH_SCRIPT_PATH}/lib:${PATH}" \
-        _DCCSH_SCRIPT_PATH="${_DCCSH_SCRIPT_PATH}" \
-        bash -c \
-          "distcc_build "'$@'"" \
-            '_' \
-            "$@"
+    env \
+      --unset=DISTCC_HOSTS \
+      PATH="${_DCCSH_SCRIPT_PATH}/lib:${PATH}" \
+      _DCCSH_SCRIPT_PATH="${_DCCSH_SCRIPT_PATH}" \
+      bash -c \
+        "distcc_build "'$@'"" \
+          '_' \
+          "$@"
   }
 fi
