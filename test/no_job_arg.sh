@@ -22,8 +22,7 @@ function main {
   done
 
   echo "no_job_arg - Executing command: ${args[*]}" >&2
-
-  echo "${args[@]}" | bash
+  bash -c "${args[*]}"
 }
 
 main "$@"
